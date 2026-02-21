@@ -47,12 +47,16 @@ typedef struct {
     CharacterState chars[2];  /* Two characters on screen */
     int active_char;          /* 0 = point, 1 = assist */
     int player_id;            /* 1 or 2 */
+    int last_input_dir;       /* Last direction input for double-tap detection */
+    int dir_change_frame;     /* Frame when direction last changed */
+    int frame_counter;        /* Frame counter for this player */
 } PlayerState;
 
 /* Player functions */
 void player_init(PlayerState *p, int player_id, int start_x, int start_y);
 void player_update(PlayerState *p, uint32_t input);
 void player_render(const PlayerState *p);
+void player_update_facing(PlayerState *p1, PlayerState *p2);
 
 /* Input button bits */
 #define INPUT_UP     (1 << 0)

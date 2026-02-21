@@ -12,6 +12,7 @@
 #define DASH_FORWARD_FRAMES 18
 #define DASH_BACKWARD_FRAMES 22
 #define LANDING_FRAMES      2
+#define DOUBLE_TAP_FRAMES   10  /* Max frames between taps for dash */
 
 void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     memset(p, 0, sizeof(PlayerState));
@@ -58,6 +59,34 @@ static void update_idle(CharacterState *c, uint32_t input) {
     } else if (INPUT_HAS(input, INPUT_UP)) {
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
+    }
+}
+
+/* Check for double-tap and start dash if detected */
+static void check_dash_input(CharacterState *c, uint32_t input, int *last_dir, int *last_dir_frame, int current_frame) {
+    int new_dir = 0;
+    if (INPUT_HAS(input, INPUT_RIGHT)) new_dir = 1;
+    else if (INPUT_HAS(input, INPUT_LEFT)) new_dir = -1;
+    
+    if (new_dir != 0 && *last_dir == new_dir) {
+        /* Double tap detected! */
+        int frames_since_last = current_frame - *last_dir_frame;
+        if (frames_since_last <= DOUBLE_TAP_FRAMES) {
+            /* Start dash */
+            if (new_dir == c->facing) {
+                c->state = STATE_DASH_FORWARD;
+            } else {
+                c->state = STATE_DASH_BACKWARD;
+            }
+            c->state_frame = 0;
+            *last_dir = 0;  /* Reset to prevent continuous dashes */
+            return;
+        }
+    }
+    
+    if (new_dir != 0) {
+        *last_dir = new_dir;
+        *last_dir_frame = current_frame;
     }
 }
 
@@ -148,8 +177,58 @@ static void update_landing(CharacterState *c, uint32_t input) {
     }
 }
 
+static void update_dash_forward(CharacterState *c, uint32_t input) {
+    c->vx = DASH_SPEED * c->facing;
+    c->dashing = TRUE;
+    c->state_frame++;
+    if (c->state_frame >= DASH_FORWARD_FRAMES) {
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+        c->dashing = FALSE;
+    }
+}
+
+static void update_dash_backward(CharacterState *c, uint32_t input) {
+    c->vx = -DASH_SPEED * c->facing;
+    c->dashing = TRUE;
+    c->state_frame++;
+    if (c->state_frame >= DASH_BACKWARD_FRAMES) {
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+        c->dashing = FALSE;
+    }
+}
+
+/* Update facing direction - characters always face each other */
+static void update_facing(CharacterState *p1, CharacterState *p2) {
+    if (p1->on_ground && p2->on_ground &&
+        !p1->in_hitstun && !p2->in_hitstun &&
+        !p1->dashing && !p2->dashing) {
+        
+        fixed_t p1_center = p1->x + FIXED_FROM_INT(p1->width / 2);
+        fixed_t p2_center = p2->x + FIXED_FROM_INT(p2->width / 2);
+        
+        if (p1_center < p2_center) {
+            /* P1 should face right, P2 should face left */
+            p1->facing = 1;
+            p2->facing = -1;
+        } else {
+            /* P1 should face left, P2 should face right */
+            p1->facing = -1;
+            p2->facing = 1;
+        }
+    }
+}
+
 void player_update(PlayerState *p, uint32_t input) {
     CharacterState *c = &p->chars[p->active_char];
+    p->frame_counter++;
+    
+    /* Check for dash input in idle or walk states */
+    if (c->state == STATE_IDLE || c->state == STATE_WALK_FORWARD || c->state == STATE_WALK_BACKWARD) {
+        check_dash_input(c, input, &p->last_input_dir, &p->dir_change_frame, p->frame_counter);
+    }
+    
     switch (c->state) {
         case STATE_IDLE: update_idle(c, input); break;
         case STATE_WALK_FORWARD: update_walk_forward(c, input); break;
@@ -158,6 +237,8 @@ void player_update(PlayerState *p, uint32_t input) {
         case STATE_JUMP_SQUAT: update_jump_squat(c, input); break;
         case STATE_AIRBORNE: update_airborne(c, input); break;
         case STATE_LANDING: update_landing(c, input); break;
+        case STATE_DASH_FORWARD: update_dash_forward(c, input); break;
+        case STATE_DASH_BACKWARD: update_dash_backward(c, input); break;
         default: break;
     }
     if (c->state != STATE_AIRBORNE) {
@@ -181,6 +262,28 @@ static const char *state_to_string(CharacterStateEnum state) {
         case STATE_DASH_FORWARD: return "DASH_FWD";
         case STATE_DASH_BACKWARD: return "DASH_BACK";
         default: return "UNKNOWN";
+    }
+}
+
+void player_update_facing(PlayerState *p1, PlayerState *p2) {
+    CharacterState *c1 = &p1->chars[p1->active_char];
+    CharacterState *c2 = &p2->chars[p2->active_char];
+    
+    if (c1->on_ground && c2->on_ground &&
+        !c1->in_hitstun && !c2->in_hitstun &&
+        !c1->dashing && !c2->dashing &&
+        c1->state != STATE_JUMP_SQUAT && c2->state != STATE_JUMP_SQUAT) {
+        
+        fixed_t p1_center = c1->x + FIXED_FROM_INT(c1->width / 2);
+        fixed_t p2_center = c2->x + FIXED_FROM_INT(c2->width / 2);
+        
+        if (p1_center < p2_center) {
+            c1->facing = 1;
+            c2->facing = -1;
+        } else {
+            c1->facing = -1;
+            c2->facing = 1;
+        }
     }
 }
 

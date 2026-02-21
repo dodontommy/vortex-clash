@@ -36,6 +36,7 @@ void game_init(GameState *game) {
 void game_update(GameState *game) {
     player_update(&game->p1, get_p1_input());
     player_update(&game->p2, get_p2_input());
+    player_update_facing(&game->p1, &game->p2);
     game->frame_count++;
 }
 
