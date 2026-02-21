@@ -1372,8 +1372,9 @@ Each phase includes: **objective, deliverables, acceptance criteria**, and **key
 
 **Deliverables:**
 - **Visual Polish:**
-  - Replace colored rectangles with proper sprites (even if simple pixel art). Each character needs: idle, walk, crouch, jump, all normals, all specials (at minimum key frames), hitstun, blockstun, knockdown.
-  - If sprites are not available, use more detailed geometric shapes (different colors per character, limb representation with rectangles).
+  - Replace colored rectangles with proper sprites. Each character needs: idle, walk, crouch, jump, all normals, all specials (at minimum key frames), hitstun, blockstun, knockdown.
+  - **Sprite source:** Use The Spriters Resource (https://www.spriters-resource.com/) to find fighting game sprite sheets. Search for MvC, Street Fighter, KOF, etc. Download sheets and adapt them for our characters. Use the browser tool to fetch and download.
+  - If exact matches aren't available, kitbash from multiple sheets or use placeholder sprites from the same source.
   - Hit sparks / impact effects (particle system: spawn N particles on hit with random velocities, fade out over 15 frames).
   - Super flash effect (screen darkens, character portrait flashes).
   - Screen shake on heavy hits and supers.

@@ -1,6 +1,8 @@
 #include "player.h"
 #include "physics.h"
+#ifndef TESTING_HEADLESS
 #include <raylib.h>
+#endif
 #include <string.h>
 #include <stdio.h>
 
@@ -45,13 +47,17 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
 
 static void update_idle(CharacterState *c, uint32_t input) {
     c->vx = 0;
-    if (INPUT_HAS(input, INPUT_DOWN)) {
+    /* Jump takes priority over walk — fighting game standard */
+    if (INPUT_HAS(input, INPUT_UP)) {
+        c->state = STATE_JUMP_SQUAT;
+        c->state_frame = 0;
+    } else if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
+        c->y += FIXED_FROM_INT(c->standing_height - c->crouch_height);
         c->height = c->crouch_height;
         c->crouching = TRUE;
     } else if (INPUT_HAS(input, INPUT_RIGHT) || INPUT_HAS(input, INPUT_LEFT)) {
-        /* Determine forward/back based on facing direction */
         int input_dir = INPUT_HAS(input, INPUT_RIGHT) ? 1 : -1;
         if (input_dir == c->facing) {
             c->state = STATE_WALK_FORWARD;
@@ -61,27 +67,21 @@ static void update_idle(CharacterState *c, uint32_t input) {
             c->vx = -WALK_BACKWARD_SPEED * c->facing;
         }
         c->state_frame = 0;
-    } else if (INPUT_HAS(input, INPUT_UP)) {
-        c->state = STATE_JUMP_SQUAT;
-        c->state_frame = 0;
-    }
-    /* Apply velocity */
-    c->x += c->vx;
-    /* Stage bounds */
-    if (c->x < 0) c->x = 0;
-    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
-        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
     }
 }
 
 /* Check for double-tap and start dash if detected */
-static void check_dash_input(CharacterState *c, uint32_t input, int *last_dir, int *last_dir_frame, int current_frame) {
+static void check_dash_input(PlayerState *p, CharacterState *c, uint32_t input) {
+    /* Only detect on rising edge (newly pressed this frame) */
+    uint32_t pressed = input & ~p->prev_input;
     int new_dir = 0;
-    if (INPUT_HAS(input, INPUT_RIGHT)) new_dir = 1;
-    else if (INPUT_HAS(input, INPUT_LEFT)) new_dir = -1;
-    
-    if (new_dir != 0 && *last_dir == new_dir) {
-        int frames_since_last = current_frame - *last_dir_frame;
+    if (pressed & INPUT_RIGHT) new_dir = 1;
+    else if (pressed & INPUT_LEFT) new_dir = -1;
+
+    if (new_dir == 0) return;  /* No new direction press this frame */
+
+    if (p->last_input_dir == new_dir) {
+        int frames_since_last = p->frame_counter - p->dir_change_frame;
         if (frames_since_last <= DOUBLE_TAP_FRAMES) {
             if (new_dir == c->facing) {
                 c->state = STATE_DASH_FORWARD;
@@ -89,15 +89,13 @@ static void check_dash_input(CharacterState *c, uint32_t input, int *last_dir, i
                 c->state = STATE_DASH_BACKWARD;
             }
             c->state_frame = 0;
-            *last_dir = 0;
+            p->last_input_dir = 0;
             return;
         }
     }
-    
-    if (new_dir != 0) {
-        *last_dir = new_dir;
-        *last_dir_frame = current_frame;
-    }
+
+    p->last_input_dir = new_dir;
+    p->dir_change_frame = p->frame_counter;
 }
 
 static void update_walk_forward(CharacterState *c, uint32_t input) {
@@ -108,18 +106,23 @@ static void update_walk_forward(CharacterState *c, uint32_t input) {
     if (INPUT_HAS(input, INPUT_RIGHT)) input_dir = 1;
     else if (INPUT_HAS(input, INPUT_LEFT)) input_dir = -1;
     
-    if (input_dir != c->facing) {
+    /* Jump priority over walk */
+    if (INPUT_HAS(input, INPUT_UP)) {
+        c->state = STATE_JUMP_SQUAT;
+        c->state_frame = 0;
+        c->vx = 0;
+    } else if (input_dir != c->facing) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
+        c->vx = 0;
     } else if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
+        c->y += FIXED_FROM_INT(c->standing_height - c->crouch_height);
         c->height = c->crouch_height;
-    } else if (INPUT_HAS(input, INPUT_UP)) {
-        c->state = STATE_JUMP_SQUAT;
-        c->state_frame = 0;
+        c->crouching = TRUE;
     }
-    
+
     /* Apply velocity */
     c->x += c->vx;
     if (c->x < 0) c->x = 0;
@@ -130,24 +133,27 @@ static void update_walk_forward(CharacterState *c, uint32_t input) {
 
 static void update_walk_backward(CharacterState *c, uint32_t input) {
     c->vx = -WALK_BACKWARD_SPEED * c->facing;
-    
+
     /* Check if still holding backward relative to facing */
     int input_dir = 0;
     if (INPUT_HAS(input, INPUT_RIGHT)) input_dir = 1;
     else if (INPUT_HAS(input, INPUT_LEFT)) input_dir = -1;
-    
-    if (input_dir != -c->facing) {
+
+    /* Jump priority over walk */
+    if (INPUT_HAS(input, INPUT_UP)) {
+        c->state = STATE_JUMP_SQUAT;
+        c->state_frame = 0;
+    } else if (input_dir != -c->facing) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
     } else if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
+        c->y += FIXED_FROM_INT(c->standing_height - c->crouch_height);
         c->height = c->crouch_height;
-    } else if (INPUT_HAS(input, INPUT_UP)) {
-        c->state = STATE_JUMP_SQUAT;
-        c->state_frame = 0;
+        c->crouching = TRUE;
     }
-    
+
     /* Apply velocity */
     c->x += c->vx;
     if (c->x < 0) c->x = 0;
@@ -161,6 +167,7 @@ static void update_crouch(CharacterState *c, uint32_t input) {
     if (!INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
+        c->y -= FIXED_FROM_INT(c->standing_height - c->crouch_height);
         c->height = c->standing_height;
         c->crouching = FALSE;
     }
@@ -257,7 +264,7 @@ void player_update(PlayerState *p, uint32_t input) {
     
     /* Check for dash input in idle or walk states */
     if (c->state == STATE_IDLE || c->state == STATE_WALK_FORWARD || c->state == STATE_WALK_BACKWARD) {
-        check_dash_input(c, input, &p->last_input_dir, &p->dir_change_frame, p->frame_counter);
+        check_dash_input(p, c, input);
     }
     
     switch (c->state) {
@@ -272,6 +279,8 @@ void player_update(PlayerState *p, uint32_t input) {
         case STATE_DASH_BACKWARD: update_dash_backward(c, input); break;
         default: break;
     }
+
+    p->prev_input = input;
 }
 
 void player_update_facing(PlayerState *p1, PlayerState *p2) {
@@ -349,18 +358,20 @@ static const char *state_to_string(CharacterStateEnum state) {
     }
 }
 
+#ifndef TESTING_HEADLESS
 void player_render(const PlayerState *p) {
     const CharacterState *c = &p->chars[p->active_char];
     int x = FIXED_TO_INT(c->x);
     int y = FIXED_TO_INT(c->y);
     Color color = (Color){c->color_r, c->color_g, c->color_b, 255};
     DrawRectangle(x, y, c->width, c->height, color);
-    
+
     /* Debug: state name */
     DrawText(state_to_string(c->state), x, y - 20, 12, (Color){200, 200, 200, 255});
-    
+
     /* Debug: player number */
     char pnum[8];
     snprintf(pnum, sizeof(pnum), "P%d", p->player_id);
     DrawText(pnum, x, y + c->height + 2, 12, (Color){200, 200, 200, 255});
 }
+#endif

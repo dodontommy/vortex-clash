@@ -51,6 +51,7 @@ typedef struct {
     int player_id;            /* 1 or 2 */
     int last_input_dir;       /* Last direction input for double-tap detection */
     int dir_change_frame;     /* Frame when direction last changed */
+    uint32_t prev_input;      /* Previous frame's raw input for edge detection */
     int frame_counter;        /* Frame counter for this player */
 } PlayerState;
 
