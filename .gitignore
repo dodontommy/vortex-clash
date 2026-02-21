@@ -1,0 +1,13 @@
+build/
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
