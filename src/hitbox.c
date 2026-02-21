@@ -94,20 +94,49 @@ int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t inp
     }
 }
 
-void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender, const AttackMove *move, int is_blocking) {
+void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender, 
+                        const AttackMove *move, int is_blocking,
+                        ComboState *attacker_combo, ComboState *defender_combo) {
     if (is_blocking) {
         /* Block: reduced damage, blockstun */
-        defender->hp -= move->chip_damage;
+        int chip = move->chip_damage;
+        if (chip < 1) chip = 1;  /* Minimum 1 chip */
+        defender->hp -= chip;
         defender->blockstun_remaining = move->blockstun;
         defender->state = STATE_BLOCKSTUN;
         defender->state_frame = 0;
         
         /* Reduced knockback on block */
         defender->vx = move->knockback_x / 2 * (defender->x > attacker->x ? 1 : -1);
+        
+        /* Block resets combo counter */
+        if (attacker_combo) {
+            combo_on_block(attacker_combo);
+        }
+        if (defender_combo) {
+            combo_reset(defender_combo);
+        }
     } else {
-        /* Hit: full damage, hitstun */
-        defender->hp -= move->damage;
-        defender->hitstun_remaining = move->hitstun;
+        /* Hit: apply damage scaling */
+        int damage = move->damage;
+        if (attacker_combo) {
+            damage = combo_get_scaled_damage(attacker_combo, damage);
+            /* Check if this is a light starter (5L or 2L) */
+            int is_light = (move->damage == 1000 || move->damage == 800);
+            combo_on_hit(attacker_combo, move->damage, is_light);
+        }
+        
+        defender->hp -= damage;
+        
+        /* Apply hitstun with decay */
+        int hitstun = move->hitstun;
+        if (attacker_combo) {
+            int decay = combo_get_hitstun_decay(attacker_combo);
+            hitstun = (hitstun * decay) / 100;
+            if (hitstun < 1) hitstun = 1;
+        }
+        
+        defender->hitstun_remaining = hitstun;
         defender->state = STATE_HITSTUN;
         defender->state_frame = 0;
         

@@ -49,7 +49,8 @@ extern const AttackMove ATTACK_5H;  /* Standing heavy */
 /* Hitbox functions */
 void hitbox_init(void);
 int hitbox_check_collision(const Hitbox *hb, const Hurtbox *hurt, int char_x, int char_y, int facing);
-void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender, const AttackMove *move, int is_blocking);
+void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender, const AttackMove *move, int is_blocking,
+                        ComboState *attacker_combo, ComboState *defender_combo);
 int hurtbox_create(CharacterState *c, Hurtbox *hurt);
 
 /* Pushbox collision */

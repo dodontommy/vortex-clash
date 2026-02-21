@@ -2,6 +2,7 @@
 #define PLAYER_H
 
 #include "types.h"
+#include "combo.h"
 
 /* Character state enum */
 typedef enum {
@@ -65,6 +66,10 @@ typedef struct {
     const struct AttackMove *current_attack;
     int attack_hit_id;        /* ID of last hit to prevent multi-hits */
     int opponent_hits[2];     /* Which opponent IDs have been hit this attack */
+    /* Combo tracking */
+    ComboState combo;         /* Current combo state */
+    int meter;                /* Super meter (0-5000) */
+    int blue_hp;              /* Recoverable health on assist */
 } PlayerState;
 
 /* Player functions */

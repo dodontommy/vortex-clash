@@ -1,6 +1,7 @@
 #include "player.h"
 #include "physics.h"
 #include "hitbox.h"
+#include "combo.h"
 #ifndef TESTING_HEADLESS
 #include <raylib.h>
 #endif
@@ -27,6 +28,11 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     p->attack_hit_id = 0;
     p->opponent_hits[0] = -1;
     p->opponent_hits[1] = -1;
+    
+    /* Initialize combo state */
+    combo_init(&p->combo);
+    p->meter = 1000;  /* Start with 1 bar for testing */
+    p->blue_hp = 0;
 
     CharacterState *c = &p->chars[0];
     c->state = STATE_IDLE;

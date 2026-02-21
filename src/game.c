@@ -36,8 +36,8 @@ static void check_attack_hit(PlayerState *attacker, PlayerState *defender, uint3
         /* Check if blocking */
         int blocking = is_blocking(d, a, defender_input);
         
-        /* Apply hit */
-        hitbox_resolve_hit(a, d, move, blocking);
+        /* Apply hit with combo tracking */
+        hitbox_resolve_hit(a, d, move, blocking, &attacker->combo, &defender->combo);
         
         /* Mark as hit */
         attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;

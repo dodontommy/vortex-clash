@@ -1,10 +1,10 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 5: Hitbox/Hurtbox & Collision System
+Phase 6: Combo System & Frame Data
 
 ## Status
-COMPLETE
+IN PROGRESS
 
 ## Completed
 - [x] Create src/hitbox.h / hitbox.c — Hitbox, Hurtbox structs, hitbox_check_collision, hitbox_resolve_hit
@@ -17,6 +17,12 @@ COMPLETE
 - [x] Add health bar rendering
 - [x] Add hitstop on hit (8 frames freeze)
 - [x] Build compiles, tests pass
+- [x] Create src/combo.h / combo.c — ComboState, damage scaling, hitstun decay
+- [x] Create src/character.h / character.c — Data-driven move definitions
+- [x] Create src/character_data/ryker.c — Full Ryker move set (normals, specials, supers)
+- [x] Integrate combo tracking into PlayerState
+- [x] Add damage scaling and hitstun decay on hits
+- [x] Add tests for attacks, hitstun, blockstun (22 total tests)
 
 ## Next Up
 - Phase 6: Combo System & Frame Data

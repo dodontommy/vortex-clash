@@ -272,6 +272,97 @@ static void test_dash_crouch_cancel(void) {
     ASSERT(active(&p)->crouching == TRUE, "crouch flag set on cancel");
 }
 
+static void test_attack_5l(void) {
+    printf("test_attack_5l:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400);
+    /* Press light attack */
+    tick(&p, INPUT_LIGHT, 1);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "enters ATTACK_STARTUP");
+    /* Tick through startup (5 frames) */
+    tick(&p, 0, 5);
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "enters ATTACK_ACTIVE after startup");
+    /* Tick through active (3 frames) */
+    tick(&p, 0, 3);
+    ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "enters ATTACK_RECOVERY after active");
+    /* Tick through recovery (10 frames) */
+    tick(&p, 0, 10);
+    ASSERT(active(&p)->state == STATE_IDLE, "returns to IDLE after recovery");
+}
+
+static void test_attack_5m(void) {
+    printf("test_attack_5m:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400);
+    tick(&p, INPUT_MEDIUM, 1);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "5M enters ATTACK_STARTUP");
+    tick(&p, 0, 8); /* startup */
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5M enters ATTACK_ACTIVE");
+    tick(&p, 0, 3); /* active */
+    ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "5M enters ATTACK_RECOVERY");
+}
+
+static void test_attack_5h(void) {
+    printf("test_attack_5h:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400);
+    tick(&p, INPUT_HEAVY, 1);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "5H enters ATTACK_STARTUP");
+    tick(&p, 0, 12); /* startup */
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5H enters ATTACK_ACTIVE");
+    tick(&p, 0, 4); /* active */
+    ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "5H enters ATTACK_RECOVERY");
+}
+
+static void test_hitstun(void) {
+    printf("test_hitstun:\n");
+    PlayerState p, opp;
+    player_init(&p, 1, 200, 400);
+    player_init(&opp, 2, 350, 400);
+    
+    /* P1 attacks P2 */
+    tick(&p, INPUT_LIGHT, 1);  /* P1 starts attack */
+    tick(&p, 0, 5); /* through startup */
+    tick(&p, 0, 3); /* through active - hit should connect */
+    
+    /* P2 should be in hitstun now (game logic would connect) */
+    /* For now, manually set hitstun to test the state */
+    active(&opp)->state = STATE_HITSTUN;
+    active(&opp)->hitstun_remaining = 12;
+    active(&opp)->in_hitstun = TRUE;
+    
+    ASSERT(active(&opp)->state == STATE_HITSTUN, "in HITSTUN state");
+    ASSERT(active(&opp)->hitstun_remaining == 12, "hitstun frames set");
+    
+    /* Tick through hitstun */
+    for (int i = 0; i < 12; i++) {
+        tick(&opp, 0, 1);
+    }
+    ASSERT(active(&opp)->state == STATE_IDLE, "returns to IDLE after hitstun");
+    ASSERT(active(&opp)->in_hitstun == FALSE, "hitstun flag cleared");
+}
+
+static void test_blockstun(void) {
+    printf("test_blockstun:\n");
+    PlayerState p;
+    player_init(&p, 2, 350, 400);  /* P2 */
+    
+    /* Set to blockstun state */
+    active(&p)->state = STATE_BLOCKSTUN;
+    active(&p)->blockstun_remaining = 8;
+    active(&p)->in_blockstun = TRUE;
+    
+    ASSERT(active(&p)->state == STATE_BLOCKSTUN, "in BLOCKSTUN state");
+    ASSERT(active(&p)->blockstun_remaining == 8, "blockstun frames set");
+    
+    /* Tick through blockstun */
+    for (int i = 0; i < 8; i++) {
+        tick(&p, 0, 1);
+    }
+    ASSERT(active(&p)->state == STATE_IDLE, "returns to IDLE after blockstun");
+    ASSERT(active(&p)->in_blockstun == FALSE, "blockstun flag cleared");
+}
+
 /* ========== MAIN ========== */
 
 int main(void) {
@@ -293,6 +384,11 @@ int main(void) {
     test_jump_squat_uncancelable();
     test_jump_squat_momentum();
     test_dash_crouch_cancel();
+    test_attack_5l();
+    test_attack_5m();
+    test_attack_5h();
+    test_hitstun();
+    test_blockstun();
 
     printf("\n=== Results: %d/%d passed, %d failed ===\n",
            tests_passed, tests_run, tests_failed);
