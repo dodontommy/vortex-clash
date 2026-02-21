@@ -1,24 +1,29 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 4: Input System with Buffering
+Phase 5: Hitbox/Hurtbox & Collision System
 
 ## Status
-COMPLETE
+IN PROGRESS
 
 ## Completed
-- [x] Create src/input.h / input.c — InputBuffer, input_update, input_button_pressed, input_button_held
-- [x] Implement ring buffer for input history (last 60 frames)
-- [x] Implement motion detection (QCF, QCB, DP, 360)
-- [x] Wire input system into player_update
-- [x] Keyboard and gamepad support via input_poll
-- [x] Build compiles with no warnings
+- [x] Create src/hitbox.h / hitbox.c — Hitbox, Hurtbox structs, hitbox_check_collision, hitbox_resolve_hit
+- [x] Extend CharacterState with hitstun_remaining, blockstun_remaining, hp (10000 max)
+- [x] Add attack states: ATTACK_STARTUP -> ATTACK_ACTIVE -> ATTACK_RECOVERY
+- [x] Implement hitstun and blockstun states
+- [x] Attack moves: 5L, 5M, 5H defined
+- [x] Build compiles, tests pass
 
 ## Next Up
-- Phase 5: Hitbox/Hurtbox & Collision System
+- [ ] Add hit detection logic to game.c
+- [ ] Add blocking logic (hold back to block)
+- [ ] Add health bar rendering
+- [ ] Add hitstop on hit
+- [ ] Verify all acceptance criteria
 
 ## Blockers
 (none)
 
 ## Session Log
-- [2026-02-21] Phase 1-4 complete
+- Phase 1-4 complete
+- Phase 5 in progress

@@ -1,5 +1,6 @@
 #include "player.h"
 #include "physics.h"
+#include "hitbox.h"
 #ifndef TESTING_HEADLESS
 #include <raylib.h>
 #endif
@@ -20,6 +21,9 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     memset(p, 0, sizeof(PlayerState));
     p->player_id = player_id;
     p->active_char = 0;
+    p->attack_hit_id = 0;
+    p->opponent_hits[0] = -1;
+    p->opponent_hits[1] = -1;
 
     CharacterState *c = &p->chars[0];
     c->state = STATE_IDLE;
@@ -43,6 +47,10 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     c->blocking = FALSE;
     c->in_hitstun = FALSE;
     c->in_blockstun = FALSE;
+    c->hp = 10000;
+    c->max_hp = 10000;
+    c->hitstun_remaining = 0;
+    c->blockstun_remaining = 0;
 }
 
 static void update_idle(CharacterState *c, uint32_t input) {
@@ -258,13 +266,85 @@ static void update_dash_backward(CharacterState *c, uint32_t input) {
     }
 }
 
+static void update_attack_startup(CharacterState *c, const AttackMove *move) {
+    c->state_frame++;
+    if (c->state_frame >= move->startup_frames) {
+        c->state = STATE_ATTACK_ACTIVE;
+        c->state_frame = 0;
+    }
+}
+
+static void update_attack_active(CharacterState *c, const AttackMove *move) {
+    c->state_frame++;
+    int active_frames = move->active_end - move->active_start + 1;
+    if (c->state_frame >= active_frames) {
+        c->state = STATE_ATTACK_RECOVERY;
+        c->state_frame = 0;
+    }
+}
+
+static void update_attack_recovery(CharacterState *c, const AttackMove *move) {
+    c->state_frame++;
+    if (c->state_frame >= move->recovery_frames) {
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+    }
+}
+
+static void update_hitstun(CharacterState *c) {
+    c->vx = 0;
+    c->vy = 0;
+    c->state_frame++;
+    if (c->state_frame >= c->hitstun_remaining) {
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+        c->in_hitstun = FALSE;
+    }
+}
+
+static void update_blockstun(CharacterState *c) {
+    c->vx = 0;
+    c->vy = 0;
+    c->state_frame++;
+    if (c->state_frame >= c->blockstun_remaining) {
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+        c->in_blockstun = FALSE;
+    }
+}
+
 void player_update(PlayerState *p, uint32_t input) {
     CharacterState *c = &p->chars[p->active_char];
     p->frame_counter++;
     
-    /* Check for dash input in idle or walk states */
+    /* Check for attack input in actionable states */
     if (c->state == STATE_IDLE || c->state == STATE_WALK_FORWARD || c->state == STATE_WALK_BACKWARD) {
-        check_dash_input(p, c, input);
+        /* Check for attack button press */
+        uint32_t pressed = input & ~p->prev_input;
+        if (pressed & INPUT_LIGHT) {
+            p->current_attack = &ATTACK_5L;
+            p->attack_hit_id++;
+            p->opponent_hits[0] = -1;
+            p->opponent_hits[1] = -1;
+            c->state = STATE_ATTACK_STARTUP;
+            c->state_frame = 0;
+        } else if (pressed & INPUT_MEDIUM) {
+            p->current_attack = &ATTACK_5M;
+            p->attack_hit_id++;
+            p->opponent_hits[0] = -1;
+            p->opponent_hits[1] = -1;
+            c->state = STATE_ATTACK_STARTUP;
+            c->state_frame = 0;
+        } else if (pressed & INPUT_HEAVY) {
+            p->current_attack = &ATTACK_5H;
+            p->attack_hit_id++;
+            p->opponent_hits[0] = -1;
+            p->opponent_hits[1] = -1;
+            c->state = STATE_ATTACK_STARTUP;
+            c->state_frame = 0;
+        } else {
+            check_dash_input(p, c, input);
+        }
     }
     
     switch (c->state) {
@@ -277,6 +357,17 @@ void player_update(PlayerState *p, uint32_t input) {
         case STATE_LANDING: update_landing(c, input); break;
         case STATE_DASH_FORWARD: update_dash_forward(c, input); break;
         case STATE_DASH_BACKWARD: update_dash_backward(c, input); break;
+        case STATE_ATTACK_STARTUP: 
+            if (p->current_attack) update_attack_startup(c, p->current_attack); 
+            break;
+        case STATE_ATTACK_ACTIVE: 
+            if (p->current_attack) update_attack_active(c, p->current_attack); 
+            break;
+        case STATE_ATTACK_RECOVERY: 
+            if (p->current_attack) update_attack_recovery(c, p->current_attack); 
+            break;
+        case STATE_HITSTUN: update_hitstun(c); break;
+        case STATE_BLOCKSTUN: update_blockstun(c); break;
         default: break;
     }
 

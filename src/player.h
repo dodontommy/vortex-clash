@@ -14,9 +14,9 @@ typedef enum {
     STATE_LANDING,
     STATE_DASH_FORWARD,
     STATE_DASH_BACKWARD,
-    STATE_ATTACK_LIGHT,
-    STATE_ATTACK_MEDIUM,
-    STATE_ATTACK_HEAVY,
+    STATE_ATTACK_STARTUP,
+    STATE_ATTACK_ACTIVE,
+    STATE_ATTACK_RECOVERY,
     STATE_BLOCK_STANDING,
     STATE_BLOCK_CROUCHING,
     STATE_HITSTUN,
@@ -42,7 +42,15 @@ typedef struct {
     bool_t blocking;
     bool_t in_hitstun;
     bool_t in_blockstun;
+    /* Combat stats */
+    int hp;
+    int hitstun_remaining;
+    int blockstun_remaining;
+    int max_hp;
 } CharacterState;
+
+/* Forward declaration */
+struct AttackMove;
 
 /* Player wrapper with input */
 typedef struct {
@@ -53,6 +61,10 @@ typedef struct {
     int dir_change_frame;     /* Frame when direction last changed */
     uint32_t prev_input;      /* Previous frame's raw input for edge detection */
     int frame_counter;        /* Frame counter for this player */
+    /* Attack tracking */
+    const struct AttackMove *current_attack;
+    int attack_hit_id;        /* ID of last hit to prevent multi-hits */
+    int opponent_hits[2];     /* Which opponent IDs have been hit this attack */
 } PlayerState;
 
 /* Player functions */
