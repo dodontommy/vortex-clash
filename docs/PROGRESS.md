@@ -25,3 +25,4 @@ COMPLETE
 - [2026-02-21] Phase 1 complete
 - [2026-02-21] Phase 2 complete: game loop, physics, rendering
 - [2026-02-21] Phase 3 complete: state machine, dashes, facing direction
+- [2026-02-21] Phase 3 fixes: walk relative to facing, removed dead code, proper height handling, push box collision
