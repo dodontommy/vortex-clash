@@ -4,6 +4,12 @@
 
 **Engine:** Raylib (C99) | **Netcode:** GGPO Rollback | **Target:** 60 FPS Deterministic Simulation
 
+### Hard Rules (Do Not Break)
+- **60 FPS locked.** Fighting games must run at exactly 60 frames per second. Never change this.
+- **All frame data is based on 60fps.** Startup, active, recovery, hitstun, blockstun — all measured in 60fps frames.
+- **Deterministic simulation.** Use fixed-point math (16.16) for all physics. No floats in gameplay code.
+- **Tests required.** Every new gameplay feature needs headless tests in tests/test_states.c.
+
 ---
 
 ## Table of Contents

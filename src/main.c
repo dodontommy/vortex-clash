@@ -1,17 +1,26 @@
 #include "types.h"
 #include "game.h"
 #include <raylib.h>
+#include <stdlib.h>
 
 int main(void) {
     const int screenWidth = SCREEN_WIDTH;
     const int screenHeight = SCREEN_HEIGHT;
+
+    /* Game speed: set VORTEX_SPEED env var (default 1, try 2 for 2x, 3 for 3x) */
+    int game_speed = 1;
+    const char *speed_env = getenv("VORTEX_SPEED");
+    if (speed_env) {
+        int s = atoi(speed_env);
+        if (s >= 1 && s <= 4) game_speed = s;
+    }
 
     InitWindow(screenWidth, screenHeight, "Vortex Clash");
 
     GameState game;
     game_init(&game);
 
-    /* Fixed timestep: 60 updates per second */
+    /* Fixed timestep: locked 60fps */
     const int targetFPS = 60;
     const double updateInterval = 1.0 / targetFPS;
     double accumulator = 0.0;
@@ -26,14 +35,15 @@ int main(void) {
 
         accumulator += frameTime;
 
-        /* Handle input (sampled every frame for responsiveness) */
-        /* Update at fixed timestep */
+        /* Update at fixed 60fps timestep, multiple ticks for speed */
         while (accumulator >= updateInterval) {
             if (IsKeyPressed(KEY_ESCAPE)) {
                 game.running = FALSE;
                 break;
             }
-            game_update(&game);
+            for (int i = 0; i < game_speed; i++) {
+                game_update(&game);
+            }
             accumulator -= updateInterval;
         }
 
