@@ -1,24 +1,49 @@
 #include "types.h"
+#include "game.h"
 #include <raylib.h>
 
 int main(void) {
-    const int screenWidth = 1280;
-    const int screenHeight = 720;
+    const int screenWidth = SCREEN_WIDTH;
+    const int screenHeight = SCREEN_HEIGHT;
 
     InitWindow(screenWidth, screenHeight, "Vortex Clash");
-    SetTargetFPS(60);
 
-    while (!WindowShouldClose()) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            break;
+    GameState game;
+    game_init(&game);
+
+    /* Fixed timestep: 60 updates per second */
+    const int targetFPS = 60;
+    const double updateInterval = 1.0 / targetFPS;
+    double accumulator = 0.0;
+    double currentTime = GetTime();
+
+    SetTargetFPS(targetFPS);
+
+    while (!WindowShouldClose() && game.running) {
+        double newTime = GetTime();
+        double frameTime = newTime - currentTime;
+        currentTime = newTime;
+
+        accumulator += frameTime;
+
+        /* Handle input (sampled every frame for responsiveness) */
+        /* Update at fixed timestep */
+        while (accumulator >= updateInterval) {
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                game.running = FALSE;
+                break;
+            }
+            game_update(&game);
+            accumulator -= updateInterval;
         }
 
+        /* Render */
         BeginDrawing();
-        ClearBackground(BLACK);
-        DrawText("Vortex Clash", screenWidth / 2 - 120, screenHeight / 2 - 20, 40, WHITE);
+        game_render(&game);
         EndDrawing();
     }
 
+    game_shutdown(&game);
     CloseWindow();
     return 0;
 }

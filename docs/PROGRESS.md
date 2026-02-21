@@ -1,24 +1,24 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 1: Project Setup & Build System
+Phase 2: Game Loop & Basic Rendering
 
 ## Status
-IN PROGRESS
+COMPLETE
 
 ## Completed
-- [x] Create CMakeLists.txt with Raylib dependency (FetchContent)
-- [x] Create directory structure (src/, assets/, lib/, tools/, build/)
-- [x] Create src/main.c — open 1280x720 window, display title, exit on ESC
-- [x] Create src/types.h — fixed_t, macros, enums (removed input defines due to raylib conflicts)
-- [x] Create .gitignore
-- [x] Verify build compiles and runs
+- [x] Create src/game.h / game.c — GameState struct, game_init/update/render
+- [x] Create src/physics.h / physics.c — fixed_t position/velocity, gravity, physics_update
+- [x] Create src/render.h / render.c — render_character (colored rect), render_stage (ground plane)
+- [x] Implement fixed-timestep loop in main.c
+- [x] Verify: rectangle on ground, left/right moves, jump with gravity, ground/stage collision, frame counter
 
 ## Next Up
-- (none - Phase 1 complete)
+- Phase 3: Character Controller & State Machine
 
 ## Blockers
 (none)
 
 ## Session Log
-- [2026-02-21] Phase 1 setup: cloned repo to /home/node/vortex-clash (not /root due to permissions), created CMakeLists.txt with Raylib FetchContent, created src/main.c and src/types.h, build successful
+- [2026-02-21] Phase 1 complete
+- [2026-02-21] Phase 2 complete: game loop, physics, rendering, fixed timestep, frame counter
