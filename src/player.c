@@ -16,6 +16,7 @@
 #define DASH_BACKWARD_FRAMES 22
 #define LANDING_FRAMES      2
 #define DOUBLE_TAP_FRAMES   10
+#define DASH_CROUCH_CANCEL_FRAMES 6
 
 void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     memset(p, 0, sizeof(PlayerState));
@@ -118,7 +119,6 @@ static void update_walk_forward(CharacterState *c, uint32_t input) {
     if (INPUT_HAS(input, INPUT_UP)) {
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
-        c->vx = 0;
     } else if (input_dir != c->facing) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
@@ -182,8 +182,23 @@ static void update_crouch(CharacterState *c, uint32_t input) {
 }
 
 static void update_jump_squat(CharacterState *c, uint32_t input) {
-    c->vx = 0;
     c->vy = 0;
+
+    /* Maintain ground momentum during jump squat */
+    if (INPUT_HAS(input, INPUT_RIGHT)) {
+        c->vx = WALK_FORWARD_SPEED;
+    } else if (INPUT_HAS(input, INPUT_LEFT)) {
+        c->vx = -WALK_FORWARD_SPEED;
+    } else {
+        c->vx = 0;
+    }
+
+    c->x += c->vx;
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
+    }
+
     c->state_frame++;
     if (c->state_frame >= JUMP_SQUAT_FRAMES) {
         c->state = STATE_AIRBORNE;
@@ -191,12 +206,14 @@ static void update_jump_squat(CharacterState *c, uint32_t input) {
         c->on_ground = FALSE;
         c->jumping = TRUE;
         c->vy = JUMP_VELOCITY;
-        
-        /* Horizontal movement based on input + facing */
+
+        /* Carry horizontal momentum into air */
         if (INPUT_HAS(input, INPUT_RIGHT)) {
             c->vx = WALK_FORWARD_SPEED;
         } else if (INPUT_HAS(input, INPUT_LEFT)) {
             c->vx = -WALK_FORWARD_SPEED;
+        } else {
+            c->vx = 0;
         }
     }
 }
@@ -236,6 +253,17 @@ static void update_dash_forward(CharacterState *c, uint32_t input) {
     c->vx = DASH_SPEED * c->facing;
     c->dashing = TRUE;
     c->state_frame++;
+    /* Crouch cancel after minimum frames */
+    if (c->state_frame >= DASH_CROUCH_CANCEL_FRAMES && INPUT_HAS(input, INPUT_DOWN)) {
+        c->state = STATE_CROUCH;
+        c->state_frame = 0;
+        c->dashing = FALSE;
+        c->vx = 0;
+        c->y += FIXED_FROM_INT(c->standing_height - c->crouch_height);
+        c->height = c->crouch_height;
+        c->crouching = TRUE;
+        return;
+    }
     if (c->state_frame >= DASH_FORWARD_FRAMES) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
@@ -253,6 +281,17 @@ static void update_dash_backward(CharacterState *c, uint32_t input) {
     c->vx = -DASH_SPEED * c->facing;
     c->dashing = TRUE;
     c->state_frame++;
+    /* Crouch cancel after minimum frames */
+    if (c->state_frame >= DASH_CROUCH_CANCEL_FRAMES && INPUT_HAS(input, INPUT_DOWN)) {
+        c->state = STATE_CROUCH;
+        c->state_frame = 0;
+        c->dashing = FALSE;
+        c->vx = 0;
+        c->y += FIXED_FROM_INT(c->standing_height - c->crouch_height);
+        c->height = c->crouch_height;
+        c->crouching = TRUE;
+        return;
+    }
     if (c->state_frame >= DASH_BACKWARD_FRAMES) {
         c->state = STATE_IDLE;
         c->state_frame = 0;

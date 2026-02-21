@@ -229,11 +229,47 @@ static void test_jump_squat_uncancelable(void) {
     player_init(&p, 1, 200, 400);
     tick(&p, INPUT_UP, 1);
     ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "in jump squat");
-    /* Try to walk during jump squat */
+    /* Direction during jump squat is allowed (momentum), but state stays */
     tick(&p, INPUT_RIGHT, 1);
-    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "still in jump squat (uncancelable)");
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "still in jump squat with direction");
     tick(&p, INPUT_DOWN, 1);
     ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "still in jump squat (can't crouch)");
+}
+
+static void test_jump_squat_momentum(void) {
+    printf("test_jump_squat_momentum:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400);
+    /* Walk right then jump — should keep moving during jump squat */
+    tick(&p, INPUT_RIGHT, 3);
+    ASSERT(active(&p)->state == STATE_WALK_FORWARD, "walking forward");
+    fixed_t x_before_jump = active(&p)->x;
+    tick(&p, INPUT_RIGHT | INPUT_UP, 1);
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "entered jump squat");
+    /* Tick 2 more frames of jump squat while holding right */
+    tick(&p, INPUT_RIGHT | INPUT_UP, 2);
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "still in jump squat");
+    ASSERT(active(&p)->x > x_before_jump, "kept moving during jump squat");
+}
+
+static void test_dash_crouch_cancel(void) {
+    printf("test_dash_crouch_cancel:\n");
+    PlayerState p;
+    player_init(&p, 1, 400, 400);
+    /* Double tap right to dash */
+    tick(&p, INPUT_RIGHT, 1);
+    tick(&p, 0, 2);
+    tick(&p, INPUT_RIGHT, 1);
+    ASSERT(active(&p)->state == STATE_DASH_FORWARD, "dashing forward");
+    /* Try to crouch too early (before cancel window) */
+    tick(&p, INPUT_DOWN, 1);
+    ASSERT(active(&p)->state == STATE_DASH_FORWARD, "can't cancel dash too early");
+    /* Tick to cancel window then crouch */
+    tick(&p, 0, 4); /* get to frame 6+ */
+    tick(&p, INPUT_DOWN, 1);
+    ASSERT(active(&p)->state == STATE_CROUCH, "crouch cancel after min frames");
+    ASSERT(active(&p)->dashing == FALSE, "dash flag cleared on cancel");
+    ASSERT(active(&p)->crouching == TRUE, "crouch flag set on cancel");
 }
 
 /* ========== MAIN ========== */
@@ -255,6 +291,8 @@ int main(void) {
     test_facing_direction();
     test_stage_bounds();
     test_jump_squat_uncancelable();
+    test_jump_squat_momentum();
+    test_dash_crouch_cancel();
 
     printf("\n=== Results: %d/%d passed, %d failed ===\n",
            tests_passed, tests_run, tests_failed);

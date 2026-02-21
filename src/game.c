@@ -32,7 +32,7 @@ static void check_attack_hit(PlayerState *attacker, PlayerState *defender, uint3
     hurtbox_create(d, &hurt);
     
     /* Check collision */
-    if (hitbox_check_collision(&hb, &hurt, FIXED_TO_INT(d->x), FIXED_TO_INT(d->y), a->facing)) {
+    if (hitbox_check_collision(&hb, &hurt, FIXED_TO_INT(a->x), FIXED_TO_INT(a->y), a->facing)) {
         /* Check if blocking */
         int blocking = is_blocking(d, a, defender_input);
         

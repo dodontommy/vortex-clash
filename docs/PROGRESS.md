@@ -24,5 +24,13 @@ COMPLETE
 ## Blockers
 (none)
 
+## Hotfixes Applied (by Tommy/Claude Code)
+- **BUG FIX**: hitbox_check_collision in game.c was using defender position instead of attacker position — attacks wouldn't connect. Fixed.
+- **BUG FIX**: Jump squat now maintains ground momentum — character keeps moving during 4-frame squat instead of freezing in place.
+- **FEATURE**: Dash crouch cancel after 6 frames (DASH_CROUCH_CANCEL_FRAMES constant). Both forward and backward dash.
+- **TESTS**: Added test_jump_squat_momentum and test_dash_crouch_cancel to test_states.c (55 total tests, all passing).
+- **NOTE**: When adding new features, make sure to add corresponding tests. Phase 5 had no combat tests — please add tests for attacks, hitstun, blockstun, blocking in Phase 6.
+
 ## Session Log
 - Phase 1-5 complete, pushed to GitHub
+- Hotfixes applied: hitbox collision bug, jump squat momentum, dash crouch cancel, new tests
