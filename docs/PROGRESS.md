@@ -1,28 +1,24 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 3: Character State Machine
+Phase 4: Input System with Buffering
 
 ## Status
 COMPLETE
 
 ## Completed
-- [x] Create src/player.h / player.c — CharacterState, PlayerState, player_update, state functions
-- [x] Implement idle, walk_forward, walk_backward, crouch, jump_squat, airborne, landing
-- [x] Implement dash_forward and dash_backward (double-tap detection)
-- [x] Implement facing direction auto-correction (characters face each other)
-- [x] Add second player with separate controls (P1: WASD + JKL, P2: Arrow keys + Numpad)
-- [x] Debug text showing state name above each character
+- [x] Create src/input.h / input.c — InputBuffer, input_update, input_button_pressed, input_button_held
+- [x] Implement ring buffer for input history (last 60 frames)
+- [x] Implement motion detection (QCF, QCB, DP, 360)
+- [x] Wire input system into player_update
+- [x] Keyboard and gamepad support via input_poll
 - [x] Build compiles with no warnings
 
 ## Next Up
-- Phase 4: Input System with Buffering
+- Phase 5: Hitbox/Hurtbox & Collision System
 
 ## Blockers
 (none)
 
 ## Session Log
-- [2026-02-21] Phase 1 complete
-- [2026-02-21] Phase 2 complete: game loop, physics, rendering
-- [2026-02-21] Phase 3 complete: state machine, dashes, facing direction
-- [2026-02-21] Phase 3 fixes: walk relative to facing, removed dead code, proper height handling, push box collision
+- [2026-02-21] Phase 1-4 complete

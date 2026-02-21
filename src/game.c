@@ -3,39 +3,28 @@
 #include "render.h"
 #include <raylib.h>
 
-static uint32_t get_p1_input(void) {
-    uint32_t input = 0;
-    if (IsKeyDown(KEY_W)) input |= INPUT_UP;
-    if (IsKeyDown(KEY_S)) input |= INPUT_DOWN;
-    if (IsKeyDown(KEY_A)) input |= INPUT_LEFT;
-    if (IsKeyDown(KEY_D)) input |= INPUT_RIGHT;
-    if (IsKeyDown(KEY_V)) input |= INPUT_LIGHT;
-    if (IsKeyDown(KEY_B)) input |= INPUT_MEDIUM;
-    return input;
-}
-
-static uint32_t get_p2_input(void) {
-    uint32_t input = 0;
-    if (IsKeyDown(KEY_UP)) input |= INPUT_UP;
-    if (IsKeyDown(KEY_DOWN)) input |= INPUT_DOWN;
-    if (IsKeyDown(KEY_LEFT)) input |= INPUT_LEFT;
-    if (IsKeyDown(KEY_RIGHT)) input |= INPUT_RIGHT;
-    if (IsKeyDown(KEY_KP_1)) input |= INPUT_LIGHT;
-    if (IsKeyDown(KEY_KP_2)) input |= INPUT_MEDIUM;
-    return input;
-}
-
 void game_init(GameState *game) {
     player_init(&game->p1, 1, 200, 400);
     player_init(&game->p2, 2, 900, 400);
+    input_init(&game->p1_input);
+    input_init(&game->p2_input);
     game->frame_count = 0;
     game->running = TRUE;
     render_init();
 }
 
 void game_update(GameState *game) {
-    player_update(&game->p1, get_p1_input());
-    player_update(&game->p2, get_p2_input());
+    /* Poll inputs */
+    uint32_t p1_raw = input_poll(1, INPUT_SOURCE_KEYBOARD);
+    uint32_t p2_raw = input_poll(2, INPUT_SOURCE_KEYBOARD);
+    
+    /* Update input buffers */
+    input_update(&game->p1_input, p1_raw);
+    input_update(&game->p2_input, p2_raw);
+    
+    /* Use buffered input for players */
+    player_update(&game->p1, input_get_current(&game->p1_input));
+    player_update(&game->p2, input_get_current(&game->p2_input));
     player_update_facing(&game->p1, &game->p2);
     player_resolve_collisions(&game->p1, &game->p2);
     game->frame_count++;

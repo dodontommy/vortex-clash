@@ -3,11 +3,14 @@
 
 #include "types.h"
 #include "player.h"
+#include "input.h"
 
 /* Game state with two players */
 typedef struct {
     PlayerState p1;
     PlayerState p2;
+    InputBuffer p1_input;
+    InputBuffer p2_input;
     int frame_count;
     bool_t running;
 } GameState;

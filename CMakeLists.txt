@@ -15,5 +15,5 @@ FetchContent_MakeAvailable(raylib)
 set(TARGETS_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-add_executable(${PROJECT_NAME} src/main.c src/game.c src/player.c src/render.c)
+add_executable(${PROJECT_NAME} src/main.c src/game.c src/player.c src/render.c src/input.c)
 target_link_libraries(${PROJECT_NAME} raylib)
