@@ -29,6 +29,8 @@ COMPLETE
 - **BUG FIX**: Jump squat now maintains ground momentum — character keeps moving during 4-frame squat instead of freezing in place.
 - **FEATURE**: Dash crouch cancel after 6 frames (DASH_CROUCH_CANCEL_FRAMES constant). Both forward and backward dash.
 - **TESTS**: Added test_jump_squat_momentum and test_dash_crouch_cancel to test_states.c (55 total tests, all passing).
+- **BUG FIX**: Players spawned at Y=400 instead of ground level. Fixed to GROUND_Y - height.
+- **FEATURE**: Wavedashing — can dash out of crouch state, enabling dash→crouch cancel→dash chains (MvC3 style).
 - **NOTE**: When adding new features, make sure to add corresponding tests. Phase 5 had no combat tests — please add tests for attacks, hitstun, blockstun, blocking in Phase 6.
 
 ## Session Log

@@ -45,8 +45,8 @@ static void check_attack_hit(PlayerState *attacker, PlayerState *defender, uint3
 }
 
 void game_init(GameState *game) {
-    player_init(&game->p1, 1, 200, 400);
-    player_init(&game->p2, 2, 900, 400);
+    player_init(&game->p1, 1, 200, GROUND_Y - 80);
+    player_init(&game->p2, 2, 900, GROUND_Y - 80);
     input_init(&game->p1_input);
     input_init(&game->p2_input);
     game->frame_count = 0;

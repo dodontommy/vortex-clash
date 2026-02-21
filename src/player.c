@@ -181,6 +181,13 @@ static void update_crouch(CharacterState *c, uint32_t input) {
     }
 }
 
+/* Uncrouch helper for dash-from-crouch */
+static void uncrouch(CharacterState *c) {
+    c->y -= FIXED_FROM_INT(c->standing_height - c->crouch_height);
+    c->height = c->standing_height;
+    c->crouching = FALSE;
+}
+
 static void update_jump_squat(CharacterState *c, uint32_t input) {
     c->vy = 0;
 
@@ -356,6 +363,15 @@ void player_update(PlayerState *p, uint32_t input) {
     CharacterState *c = &p->chars[p->active_char];
     p->frame_counter++;
     
+    /* Check for dash from crouch (wavedash) */
+    if (c->state == STATE_CROUCH) {
+        CharacterStateEnum before = c->state;
+        check_dash_input(p, c, input);
+        if (c->state == STATE_DASH_FORWARD || c->state == STATE_DASH_BACKWARD) {
+            uncrouch(c);
+        }
+    }
+
     /* Check for attack input in actionable states */
     if (c->state == STATE_IDLE || c->state == STATE_WALK_FORWARD || c->state == STATE_WALK_BACKWARD) {
         /* Check for attack button press */
