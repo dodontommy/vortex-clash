@@ -1,24 +1,27 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 2: Game Loop & Basic Rendering
+Phase 3: Character State Machine
 
 ## Status
-COMPLETE
+IN PROGRESS
 
 ## Completed
-- [x] Create src/game.h / game.c — GameState struct, game_init/update/render
-- [x] Create src/physics.h / physics.c — fixed_t position/velocity, gravity, physics_update
-- [x] Create src/render.h / render.c — render_character (colored rect), render_stage (ground plane)
-- [x] Implement fixed-timestep loop in main.c
-- [x] Verify: rectangle on ground, left/right moves, jump with gravity, ground/stage collision, frame counter
+- [x] Create src/player.h / player.c — CharacterState, PlayerState, player_update, state functions
+- [x] Implement idle, walk_forward, walk_backward, crouch, jump_squat, airborne, landing
+- [x] Add second player with separate controls (P1: WASD + JKL, P2: Arrow keys + Numpad)
+- [x] Debug text showing state name above each character
+- [x] Build compiles with no warnings
 
 ## Next Up
-- Phase 3: Character Controller & State Machine
+- [ ] Implement facing direction auto-correction (characters face each other)
+- [ ] Implement dash_forward and dash_backward
+- [ ] Verify all acceptance criteria
 
 ## Blockers
 (none)
 
 ## Session Log
 - [2026-02-21] Phase 1 complete
-- [2026-02-21] Phase 2 complete: game loop, physics, rendering, fixed timestep, frame counter
+- [2026-02-21] Phase 2 complete: game loop, physics, rendering
+- [2026-02-21] Phase 3 in progress: player state machine, two-player support

@@ -2,11 +2,12 @@
 #define GAME_H
 
 #include "types.h"
-#include "physics.h"
+#include "player.h"
 
-/* Simplified game state for Phase 2 */
+/* Game state with two players */
 typedef struct {
-    Character *player;
+    PlayerState p1;
+    PlayerState p2;
     int frame_count;
     bool_t running;
 } GameState;
