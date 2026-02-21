@@ -1,13 +1,27 @@
+# Build
 build/
 *.o
-*.exe
-*.dll
+*.a
 *.so
 *.dylib
-.vs/
+*.dll
+
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
-*~
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Raylib (fetched)
+lib/
+
+# OS
 .DS_Store
 Thumbs.db

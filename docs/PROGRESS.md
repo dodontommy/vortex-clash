@@ -4,21 +4,21 @@
 Phase 1: Project Setup & Build System
 
 ## Status
-NOT STARTED
+IN PROGRESS
 
 ## Completed
-(none yet)
+- [x] Create CMakeLists.txt with Raylib dependency (FetchContent)
+- [x] Create directory structure (src/, assets/, lib/, tools/, build/)
+- [x] Create src/main.c — open 1280x720 window, display title, exit on ESC
+- [x] Create src/types.h — fixed_t, macros, enums (removed input defines due to raylib conflicts)
+- [x] Create .gitignore
+- [x] Verify build compiles and runs
 
 ## Next Up
-- [ ] Create CMakeLists.txt with Raylib dependency (FetchContent)
-- [ ] Create directory structure (src/, assets/, lib/, tools/, build/)
-- [ ] Create src/main.c — open 1280x720 window, display title, exit on ESC
-- [ ] Create src/types.h — fixed_t, macros, enums, input defines
-- [ ] Create .gitignore
-- [ ] Verify build compiles and runs
+- (none - Phase 1 complete)
 
 ## Blockers
 (none)
 
 ## Session Log
-(append entries here as work is done)
+- [2026-02-21] Phase 1 setup: cloned repo to /home/node/vortex-clash (not /root due to permissions), created CMakeLists.txt with Raylib FetchContent, created src/main.c and src/types.h, build successful
