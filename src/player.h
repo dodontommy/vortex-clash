@@ -31,6 +31,8 @@ typedef struct {
     fixed_t x, y;
     fixed_t vx, vy;
     int width, height;
+    int standing_height;
+    int crouch_height;
     int color_r, color_g, color_b;
     int facing;             /* -1 = left, 1 = right */
     bool_t on_ground;
@@ -57,6 +59,7 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y);
 void player_update(PlayerState *p, uint32_t input);
 void player_render(const PlayerState *p);
 void player_update_facing(PlayerState *p1, PlayerState *p2);
+void player_resolve_collisions(PlayerState *p1, PlayerState *p2);
 
 /* Input button bits */
 #define INPUT_UP     (1 << 0)

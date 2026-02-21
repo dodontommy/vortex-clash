@@ -12,7 +12,7 @@
 #define DASH_FORWARD_FRAMES 18
 #define DASH_BACKWARD_FRAMES 22
 #define LANDING_FRAMES      2
-#define DOUBLE_TAP_FRAMES   10  /* Max frames between taps for dash */
+#define DOUBLE_TAP_FRAMES   10
 
 void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     memset(p, 0, sizeof(PlayerState));
@@ -27,7 +27,9 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y) {
     c->vx = 0;
     c->vy = 0;
     c->width = 50;
-    c->height = 80;
+    c->standing_height = 80;
+    c->crouch_height = 40;
+    c->height = c->standing_height;
     c->color_r = (player_id == 1) ? 255 : 80;
     c->color_g = (player_id == 1) ? 80 : 255;
     c->color_b = 80;
@@ -46,19 +48,29 @@ static void update_idle(CharacterState *c, uint32_t input) {
     if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
-        c->height = 40;
+        c->height = c->crouch_height;
         c->crouching = TRUE;
-    } else if (INPUT_HAS(input, INPUT_RIGHT)) {
-        c->state = STATE_WALK_FORWARD;
+    } else if (INPUT_HAS(input, INPUT_RIGHT) || INPUT_HAS(input, INPUT_LEFT)) {
+        /* Determine forward/back based on facing direction */
+        int input_dir = INPUT_HAS(input, INPUT_RIGHT) ? 1 : -1;
+        if (input_dir == c->facing) {
+            c->state = STATE_WALK_FORWARD;
+            c->vx = WALK_FORWARD_SPEED * c->facing;
+        } else {
+            c->state = STATE_WALK_BACKWARD;
+            c->vx = -WALK_BACKWARD_SPEED * c->facing;
+        }
         c->state_frame = 0;
-        c->vx = WALK_FORWARD_SPEED;
-    } else if (INPUT_HAS(input, INPUT_LEFT)) {
-        c->state = STATE_WALK_BACKWARD;
-        c->state_frame = 0;
-        c->vx = -WALK_BACKWARD_SPEED;
     } else if (INPUT_HAS(input, INPUT_UP)) {
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
+    }
+    /* Apply velocity */
+    c->x += c->vx;
+    /* Stage bounds */
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
     }
 }
 
@@ -69,17 +81,15 @@ static void check_dash_input(CharacterState *c, uint32_t input, int *last_dir, i
     else if (INPUT_HAS(input, INPUT_LEFT)) new_dir = -1;
     
     if (new_dir != 0 && *last_dir == new_dir) {
-        /* Double tap detected! */
         int frames_since_last = current_frame - *last_dir_frame;
         if (frames_since_last <= DOUBLE_TAP_FRAMES) {
-            /* Start dash */
             if (new_dir == c->facing) {
                 c->state = STATE_DASH_FORWARD;
             } else {
                 c->state = STATE_DASH_BACKWARD;
             }
             c->state_frame = 0;
-            *last_dir = 0;  /* Reset to prevent continuous dashes */
+            *last_dir = 0;
             return;
         }
     }
@@ -91,32 +101,58 @@ static void check_dash_input(CharacterState *c, uint32_t input, int *last_dir, i
 }
 
 static void update_walk_forward(CharacterState *c, uint32_t input) {
-    c->vx = WALK_FORWARD_SPEED;
-    if (!INPUT_HAS(input, INPUT_RIGHT)) {
+    c->vx = WALK_FORWARD_SPEED * c->facing;
+    
+    /* Check if still holding forward relative to facing */
+    int input_dir = 0;
+    if (INPUT_HAS(input, INPUT_RIGHT)) input_dir = 1;
+    else if (INPUT_HAS(input, INPUT_LEFT)) input_dir = -1;
+    
+    if (input_dir != c->facing) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
     } else if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
-        c->height = 40;
+        c->height = c->crouch_height;
     } else if (INPUT_HAS(input, INPUT_UP)) {
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
     }
+    
+    /* Apply velocity */
+    c->x += c->vx;
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
+    }
 }
 
 static void update_walk_backward(CharacterState *c, uint32_t input) {
-    c->vx = -WALK_BACKWARD_SPEED;
-    if (!INPUT_HAS(input, INPUT_LEFT)) {
+    c->vx = -WALK_BACKWARD_SPEED * c->facing;
+    
+    /* Check if still holding backward relative to facing */
+    int input_dir = 0;
+    if (INPUT_HAS(input, INPUT_RIGHT)) input_dir = 1;
+    else if (INPUT_HAS(input, INPUT_LEFT)) input_dir = -1;
+    
+    if (input_dir != -c->facing) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
     } else if (INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
         c->state_frame = 0;
-        c->height = 40;
+        c->height = c->crouch_height;
     } else if (INPUT_HAS(input, INPUT_UP)) {
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
+    }
+    
+    /* Apply velocity */
+    c->x += c->vx;
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
     }
 }
 
@@ -125,7 +161,7 @@ static void update_crouch(CharacterState *c, uint32_t input) {
     if (!INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
-        c->height = 80;
+        c->height = c->standing_height;
         c->crouching = FALSE;
     }
 }
@@ -140,9 +176,11 @@ static void update_jump_squat(CharacterState *c, uint32_t input) {
         c->on_ground = FALSE;
         c->jumping = TRUE;
         c->vy = JUMP_VELOCITY;
-        if (INPUT_HAS(input, INPUT_RIGHT) && INPUT_HAS(input, INPUT_UP)) {
+        
+        /* Horizontal movement based on input + facing */
+        if (INPUT_HAS(input, INPUT_RIGHT)) {
             c->vx = WALK_FORWARD_SPEED;
-        } else if (INPUT_HAS(input, INPUT_LEFT) && INPUT_HAS(input, INPUT_UP)) {
+        } else if (INPUT_HAS(input, INPUT_LEFT)) {
             c->vx = -WALK_FORWARD_SPEED;
         }
     }
@@ -152,6 +190,7 @@ static void update_airborne(CharacterState *c, uint32_t input) {
     c->vy += GRAVITY;
     c->x += c->vx;
     c->y += c->vy;
+    
     int ground_top = GROUND_Y - c->height;
     if (c->y >= FIXED_FROM_INT(ground_top)) {
         c->y = FIXED_FROM_INT(ground_top);
@@ -161,6 +200,7 @@ static void update_airborne(CharacterState *c, uint32_t input) {
         c->state = STATE_LANDING;
         c->state_frame = 0;
     }
+    
     if (c->x < 0) c->x = 0;
     if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
         c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
@@ -186,6 +226,12 @@ static void update_dash_forward(CharacterState *c, uint32_t input) {
         c->state_frame = 0;
         c->dashing = FALSE;
     }
+    /* Apply velocity */
+    c->x += c->vx;
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
+    }
 }
 
 static void update_dash_backward(CharacterState *c, uint32_t input) {
@@ -197,26 +243,11 @@ static void update_dash_backward(CharacterState *c, uint32_t input) {
         c->state_frame = 0;
         c->dashing = FALSE;
     }
-}
-
-/* Update facing direction - characters always face each other */
-static void update_facing(CharacterState *p1, CharacterState *p2) {
-    if (p1->on_ground && p2->on_ground &&
-        !p1->in_hitstun && !p2->in_hitstun &&
-        !p1->dashing && !p2->dashing) {
-        
-        fixed_t p1_center = p1->x + FIXED_FROM_INT(p1->width / 2);
-        fixed_t p2_center = p2->x + FIXED_FROM_INT(p2->width / 2);
-        
-        if (p1_center < p2_center) {
-            /* P1 should face right, P2 should face left */
-            p1->facing = 1;
-            p2->facing = -1;
-        } else {
-            /* P1 should face left, P2 should face right */
-            p1->facing = -1;
-            p2->facing = 1;
-        }
+    /* Apply velocity */
+    c->x += c->vx;
+    if (c->x < 0) c->x = 0;
+    if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
+        c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
     }
 }
 
@@ -241,28 +272,6 @@ void player_update(PlayerState *p, uint32_t input) {
         case STATE_DASH_BACKWARD: update_dash_backward(c, input); break;
         default: break;
     }
-    if (c->state != STATE_AIRBORNE) {
-        c->x += c->vx;
-        if (c->x < 0) c->x = 0;
-        if (c->x > FIXED_FROM_INT(SCREEN_WIDTH - c->width)) {
-            c->x = FIXED_FROM_INT(SCREEN_WIDTH - c->width);
-        }
-    }
-}
-
-static const char *state_to_string(CharacterStateEnum state) {
-    switch (state) {
-        case STATE_IDLE: return "IDLE";
-        case STATE_WALK_FORWARD: return "WALK_FWD";
-        case STATE_WALK_BACKWARD: return "WALK_BACK";
-        case STATE_CROUCH: return "CROUCH";
-        case STATE_JUMP_SQUAT: return "JUMP_SQUAT";
-        case STATE_AIRBORNE: return "AIRBORNE";
-        case STATE_LANDING: return "LANDING";
-        case STATE_DASH_FORWARD: return "DASH_FWD";
-        case STATE_DASH_BACKWARD: return "DASH_BACK";
-        default: return "UNKNOWN";
-    }
 }
 
 void player_update_facing(PlayerState *p1, PlayerState *p2) {
@@ -284,6 +293,59 @@ void player_update_facing(PlayerState *p1, PlayerState *p2) {
             c1->facing = -1;
             c2->facing = 1;
         }
+    }
+}
+
+void player_resolve_collisions(PlayerState *p1, PlayerState *p2) {
+    CharacterState *c1 = &p1->chars[p1->active_char];
+    CharacterState *c2 = &p2->chars[p2->active_char];
+    
+    /* Simple AABB collision */
+    int c1_left = FIXED_TO_INT(c1->x);
+    int c1_right = c1_left + c1->width;
+    int c2_left = FIXED_TO_INT(c2->x);
+    int c2_right = c2_left + c2->width;
+    
+    /* Check for overlap */
+    if (c1_left < c2_right && c1_right > c2_left) {
+        /* Push them apart */
+        int overlap = (c1_right - c2_left < c2_right - c1_left) ? 
+                      (c1_right - c2_left) : (c2_right - c1_left);
+        int push = overlap / 2 + 1;  /* +1 to ensure separation */
+        
+        if (c1->x < c2->x) {
+            /* P1 is on left, push left */
+            c1->x -= FIXED_FROM_INT(push);
+            c2->x += FIXED_FROM_INT(push);
+        } else {
+            c1->x += FIXED_FROM_INT(push);
+            c2->x -= FIXED_FROM_INT(push);
+        }
+        
+        /* Re-apply stage bounds */
+        if (c1->x < 0) c1->x = 0;
+        if (c1->x > FIXED_FROM_INT(SCREEN_WIDTH - c1->width)) {
+            c1->x = FIXED_FROM_INT(SCREEN_WIDTH - c1->width);
+        }
+        if (c2->x < 0) c2->x = 0;
+        if (c2->x > FIXED_FROM_INT(SCREEN_WIDTH - c2->width)) {
+            c2->x = FIXED_FROM_INT(SCREEN_WIDTH - c2->width);
+        }
+    }
+}
+
+static const char *state_to_string(CharacterStateEnum state) {
+    switch (state) {
+        case STATE_IDLE: return "IDLE";
+        case STATE_WALK_FORWARD: return "WALK_FWD";
+        case STATE_WALK_BACKWARD: return "WALK_BACK";
+        case STATE_CROUCH: return "CROUCH";
+        case STATE_JUMP_SQUAT: return "JUMP_SQUAT";
+        case STATE_AIRBORNE: return "AIRBORNE";
+        case STATE_LANDING: return "LANDING";
+        case STATE_DASH_FORWARD: return "DASH_FWD";
+        case STATE_DASH_BACKWARD: return "DASH_BACK";
+        default: return "UNKNOWN";
     }
 }
 
