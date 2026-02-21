@@ -11,9 +11,11 @@
 #define WALK_FORWARD_SPEED  FIXED_FROM_INT(4)
 #define WALK_BACKWARD_SPEED FIXED_FROM_INT(3)
 #define JUMP_SQUAT_FRAMES   4
-#define DASH_SPEED          FIXED_FROM_INT(14)
-#define DASH_FORWARD_FRAMES 12
-#define DASH_BACKWARD_FRAMES 14
+#define DASH_INITIAL_SPEED  FIXED_FROM_INT(20)
+#define DASH_FRICTION       FIXED_FROM_INT(1)
+#define DASH_MIN_SPEED      FIXED_FROM_INT(4)
+#define DASH_FORWARD_FRAMES 14
+#define DASH_BACKWARD_FRAMES 16
 #define LANDING_FRAMES      2
 #define DOUBLE_TAP_FRAMES   10
 #define DASH_CROUCH_CANCEL_FRAMES 6
@@ -257,9 +259,18 @@ static void update_landing(CharacterState *c, uint32_t input) {
 }
 
 static void update_dash_forward(CharacterState *c, uint32_t input) {
-    c->vx = DASH_SPEED * c->facing;
     c->dashing = TRUE;
     c->state_frame++;
+    /* Set velocity: burst start, decelerate over time */
+    if (c->state_frame == 1) {
+        c->vx = DASH_INITIAL_SPEED * c->facing;
+    } else {
+        /* Decelerate toward min speed */
+        fixed_t speed = c->vx * c->facing; /* absolute speed */
+        speed -= DASH_FRICTION;
+        if (speed < DASH_MIN_SPEED) speed = DASH_MIN_SPEED;
+        c->vx = speed * c->facing;
+    }
     /* Crouch cancel after minimum frames */
     if (c->state_frame >= DASH_CROUCH_CANCEL_FRAMES && INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
@@ -275,6 +286,7 @@ static void update_dash_forward(CharacterState *c, uint32_t input) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
         c->dashing = FALSE;
+        c->vx = 0;
     }
     /* Apply velocity */
     c->x += c->vx;
@@ -285,9 +297,17 @@ static void update_dash_forward(CharacterState *c, uint32_t input) {
 }
 
 static void update_dash_backward(CharacterState *c, uint32_t input) {
-    c->vx = -DASH_SPEED * c->facing;
     c->dashing = TRUE;
     c->state_frame++;
+    /* Set velocity: burst start, decelerate over time */
+    if (c->state_frame == 1) {
+        c->vx = -DASH_INITIAL_SPEED * c->facing;
+    } else {
+        fixed_t speed = -c->vx * c->facing; /* absolute speed */
+        speed -= DASH_FRICTION;
+        if (speed < DASH_MIN_SPEED) speed = DASH_MIN_SPEED;
+        c->vx = -speed * c->facing;
+    }
     /* Crouch cancel after minimum frames */
     if (c->state_frame >= DASH_CROUCH_CANCEL_FRAMES && INPUT_HAS(input, INPUT_DOWN)) {
         c->state = STATE_CROUCH;
@@ -303,6 +323,7 @@ static void update_dash_backward(CharacterState *c, uint32_t input) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
         c->dashing = FALSE;
+        c->vx = 0;
     }
     /* Apply velocity */
     c->x += c->vx;
@@ -363,9 +384,8 @@ void player_update(PlayerState *p, uint32_t input) {
     CharacterState *c = &p->chars[p->active_char];
     p->frame_counter++;
     
-    /* Check for dash from crouch (wavedash) */
-    if (c->state == STATE_CROUCH) {
-        CharacterStateEnum before = c->state;
+    /* Check for dash from crouch (wavedash) — must release down first */
+    if (c->state == STATE_CROUCH && !INPUT_HAS(input, INPUT_DOWN)) {
         check_dash_input(p, c, input);
         if (c->state == STATE_DASH_FORWARD || c->state == STATE_DASH_BACKWARD) {
             uncrouch(c);
