@@ -52,7 +52,7 @@ int input_button_pressed(const InputBuffer *buf, uint32_t button);
 int input_button_held(const InputBuffer *buf, uint32_t button);
 
 /* Detect motion in input history */
-MotionType input_detect_motion(const InputBuffer *buf);
+MotionType input_detect_motion(const InputBuffer *buf, int facing);
 
 /* Get the current raw input (most recent) */
 uint32_t input_get_current(const InputBuffer *buf);

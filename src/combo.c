@@ -27,16 +27,10 @@ void combo_init(ComboState *combo) {
 
 void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter) {
     combo->hit_count++;
-    combo->hit_count++; /* Increment for this hit */
-    
+
     /* Calculate scaled damage */
     int scaling = DAMAGE_SCALING[combo->hit_count - 1];
-    if (combo->hit_count > 1) {
-        scaling = DAMAGE_SCALING[combo->hit_count - 1];
-    } else {
-        scaling = 100;
-    }
-    
+
     /* Apply light starter additional reduction */
     if (is_light_starter) {
         scaling = (scaling * LIGHT_STARTER_MULT) / 100;
@@ -72,8 +66,7 @@ int combo_get_scaled_damage(ComboState *combo, int base_damage) {
 }
 
 void combo_on_block(ComboState *combo) {
-    /* Block resets combo counter but keeps scaling for next hit */
-    combo->hit_count = 0;
+    combo_reset(combo);
 }
 
 void combo_reset(ComboState *combo) {

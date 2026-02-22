@@ -2,14 +2,22 @@
 #define RENDER_H
 
 #include "types.h"
-#include "physics.h"
 
-/* Render functions - using Character from physics.h */
+/* Render functions */
 void render_init(void);
-void render_character(const Character *c);
 void render_health_bar(int player_id, int hp, int max_hp, int x, int y);
-void render_stage(void);
+void render_stage_bg(void);
+void render_stage_ground(void);
 void render_frame_counter(int frame);
 void render_shutdown(void);
+
+/* Combo counter + training menu */
+void render_combo_counter(int hits, int damage, int x, int y, unsigned char alpha);
+void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset);
+
+/* Debug visualization */
+void render_debug_hitbox(int x, int y, int w, int h);
+void render_debug_hurtbox(int x, int y, int w, int h);
+void render_debug_pushbox(int x, int y, int w, int h);
 
 #endif /* RENDER_H */

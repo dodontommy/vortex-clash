@@ -23,24 +23,13 @@ typedef int32_t bool_t;
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
-/* Game states */
-typedef enum {
-    STATE_MENU,
-    STATE_GAME,
-    STATE_PAUSED,
-    STATE_GAMEOVER
-} game_state_t;
+/* Stage (world) dimensions — larger than screen, camera shows a portion */
+#define STAGE_WIDTH 1600
+#define STAGE_HEIGHT 720
 
-/* Player directions */
-typedef enum {
-    DIR_LEFT = -1,
-    DIR_RIGHT = 1
-} direction_t;
-
-/* Hitbox simple rect */
-typedef struct {
-    int x, y;
-    int w, h;
-} rect_t;
+/* Physics constants */
+#define GRAVITY (FIXED_FROM_INT(1) / 2)  /* ~0.5 pixels/frame^2 */
+#define JUMP_VELOCITY FIXED_FROM_INT(-12)
+#define GROUND_Y 600  /* Y position of ground in screen coords */
 
 #endif /* TYPES_H */

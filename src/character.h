@@ -59,8 +59,19 @@ typedef struct {
     int flags;                 /* Properties like INVINCIBLE */
 } MoveFrame;
 
+/* Normal index constants */
+#define NORMAL_5L  0
+#define NORMAL_5M  1
+#define NORMAL_5H  2
+#define NORMAL_2L  3
+#define NORMAL_2M  4
+#define NORMAL_2H  5
+#define NORMAL_JL  6
+#define NORMAL_JM  7
+#define NORMAL_JH  8
+
 /* Complete move definition */
-typedef struct {
+typedef struct MoveData {
     const char *name;
     MoveType move_type;
     int total_frames;           /* Total duration */
@@ -88,8 +99,11 @@ typedef struct {
     
     /* Properties */
     int properties;
+    int strength;           /* 0=Light, 1=Medium, 2=Heavy (for chain ordering) */
     int meter_cost;
     int meter_gain;
+    int anim_id;            /* AnimId for sprite animation (-1 = none) */
+    const int *cancel_into; /* NULL = use properties flags, otherwise list of NORMAL_* indices terminated by -1 */
 } MoveData;
 
 /* Character definition */
@@ -101,12 +115,26 @@ typedef struct {
     fixed_t walk_speed_forward;
     fixed_t walk_speed_backward;
     fixed_t jump_velocity;
+    fixed_t dash_speed;
     fixed_t air_dash_speed;
     
     /* Health */
     int max_hp;
     int damage_multiplier;      /* 100 = normal, 90 = takes 90% damage (Titan) */
-    
+
+    /* Per-character movement tuning */
+    int jump_squat_frames;
+    int dash_forward_frames;
+    int dash_backward_frames;
+    fixed_t dash_friction;
+    fixed_t dash_min_speed;
+    int landing_frames;
+
+    /* Pushbox dimensions */
+    int width;
+    int standing_height;
+    int crouch_height;
+
     /* Moves - indexed by input */
     const MoveData *normals[16];   /* 5L, 5M, 5H, 2L, 2M, 2H, j.L, j.M, j.H, etc */
     const MoveData *specials[16];  /* 236L, 236M, 236H, 214L, etc */
@@ -125,6 +153,6 @@ const MoveData *character_get_super(CharacterId id, int level);
 
 /* Helper macros for creating moves */
 #define MOVE(n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props) \
-    { #n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props, 0, 0 }
+    { #n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props, 0, 0, -1, NULL }
 
 #endif /* CHARACTER_H */
