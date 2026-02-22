@@ -1399,8 +1399,8 @@ static void test_throw_in_range(void) {
     player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
     /* Opponent at 430 — within THROW_RANGE (75) */
     fixed_t opp_x = FIXED_FROM_INT(430);
-    /* L+M simultaneously from idle, no motion */
-    tick_opp(&p, INPUT_LIGHT | INPUT_MEDIUM, 1, opp_x);
+    /* 6H (forward + heavy) at close range = throw */
+    tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, opp_x);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "throw starts at close range");
     ASSERT(p.current_attack == character_get_throw(CHAR_RYKER), "throw move selected");
 }
@@ -1411,8 +1411,8 @@ static void test_throw_out_of_range(void) {
     player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
     /* Opponent at 600 — beyond THROW_RANGE (75) */
     fixed_t opp_x = FIXED_FROM_INT(600);
-    tick_opp(&p, INPUT_LIGHT | INPUT_MEDIUM, 1, opp_x);
-    /* Should NOT throw — goes to pending buffer or two-button dash instead */
+    tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, opp_x);
+    /* Should NOT throw — out of range, gets normal 5H instead */
     ASSERT(p.current_attack != character_get_throw(CHAR_RYKER),
            "throw does not start out of range");
 }
@@ -1424,18 +1424,17 @@ static void test_throw_loses_to_motion(void) {
     player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
     input_init(&buf);
     fixed_t opp_x = FIXED_FROM_INT(430);
-    /* Feed QCF motion then L+M — should be super, not throw */
+    /* Feed QCF motion then 6H — should be 623H special, not throw */
     input_update(&buf, INPUT_DOWN);
     player_update(&p, INPUT_DOWN, &buf, opp_x);
     input_update(&buf, INPUT_DOWN | INPUT_RIGHT);
     player_update(&p, INPUT_DOWN | INPUT_RIGHT, &buf, opp_x);
-    input_update(&buf, INPUT_RIGHT | INPUT_LIGHT | INPUT_MEDIUM);
-    player_update(&p, INPUT_RIGHT | INPUT_LIGHT | INPUT_MEDIUM, &buf, opp_x);
-    /* With QCF motion + L+M, super takes priority over throw */
+    input_update(&buf, INPUT_RIGHT | INPUT_HEAVY);
+    player_update(&p, INPUT_RIGHT | INPUT_HEAVY, &buf, opp_x);
+    /* With QCF motion + 6H, special takes priority over throw */
     if (p.current_attack != NULL) {
-        ASSERT(p.current_attack->move_type != MOVE_TYPE_THROW, "motion + L+M = super, not throw");
+        ASSERT(p.current_attack->move_type != MOVE_TYPE_THROW, "motion + 6H = special, not throw");
     } else {
-        /* Super might not fire if no meter — but throw should also not fire due to motion */
         ASSERT(1, "no throw when motion detected");
     }
 }

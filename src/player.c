@@ -732,9 +732,14 @@ static void start_attack_move(PlayerState *p, const struct MoveData *move) {
     p->hit_confirmed = 0;
     p->attack_from_crouch = c->crouching;
     p->attack_from_air = !c->on_ground;
-    /* Uncrouch for standing attacks only */
-    if (c->crouching && move->name && move->name[0] != '2') {
-        uncrouch(c);
+    /* Stay crouching only for crouching normals (2L, 2M, 2H).
+     * Specials/supers always uncrouch — "236L" starts with '2' but is not a crouch normal. */
+    if (c->crouching) {
+        int is_crouch_normal = (move->move_type == MOVE_TYPE_NORMAL
+                                && move->name && move->name[0] == '2');
+        if (!is_crouch_normal) {
+            uncrouch(c);
+        }
     }
     c->state = STATE_ATTACK_STARTUP;
     c->state_frame = 0;
@@ -825,7 +830,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
 
     /* 1. Super: motion + L+M pressed together */
     if (!action_taken
-        && (pressed & INPUT_THROWN) == INPUT_THROWN
+        && (pressed & (INPUT_LIGHT | INPUT_MEDIUM)) == (INPUT_LIGHT | INPUT_MEDIUM)
         && can_cancel(lvl, ACTION_SUPER)
         && input_buf) {
         MotionType motion = input_detect_motion(input_buf, c->facing);
@@ -839,20 +844,24 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         }
     }
 
-    /* 1b. Throw: L+M pressed together, no motion, grounded, close range */
+    /* 1b. Throw: 6H or 4H at close range (CvS2-style proximity throw) */
     if (!action_taken
-        && (pressed & INPUT_THROWN) == INPUT_THROWN
+        && (pressed & INPUT_HEAVY)
         && lvl == CANCEL_FREE
         && c->on_ground) {
-        MotionType throw_motion = input_buf ? input_detect_motion(input_buf, c->facing) : MOTION_NONE;
-        if (throw_motion == MOTION_NONE) {
-            const MoveData *throw_mv = character_get_throw(p->character_id);
-            if (throw_mv) {
-                fixed_t dist = c->x - opponent_x;
-                if (dist < 0) dist = -dist;
-                if (dist <= FIXED_FROM_INT(THROW_RANGE)) {
-                    start_attack_move(p, throw_mv);
-                    action_taken = 1;
+        /* Check if holding forward or back */
+        int dir = get_input_dir(input);
+        if (dir != 0) {
+            MotionType throw_motion = input_buf ? input_detect_motion(input_buf, c->facing) : MOTION_NONE;
+            if (throw_motion == MOTION_NONE) {
+                const MoveData *throw_mv = character_get_throw(p->character_id);
+                if (throw_mv) {
+                    fixed_t dist = c->x - opponent_x;
+                    if (dist < 0) dist = -dist;
+                    if (dist <= FIXED_FROM_INT(THROW_RANGE)) {
+                        start_attack_move(p, throw_mv);
+                        action_taken = 1;
+                    }
                 }
             }
         }

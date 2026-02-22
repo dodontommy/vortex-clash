@@ -14,7 +14,6 @@
 #define INPUT_SPECIAL (1 << 7)
 
 /* Composite inputs */
-#define INPUT_THROWN (INPUT_LIGHT | INPUT_MEDIUM)  /* L+M = throw */
 #define INPUT_SUPER  (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY)  /* L+M+H = super */
 
 /* Motion types */
