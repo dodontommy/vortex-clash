@@ -1,5 +1,6 @@
 #include "hitbox.h"
 #include "character.h"
+#include "combo.h"
 #include <string.h>
 
 void hitbox_init(void) {
@@ -115,10 +116,23 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
             /* TODO: transition to air combo state, super jump cancel window */
         }
         if (move->properties & MOVE_PROP_WALL_BOUNCE) {
-            /* TODO: detect wall proximity, apply bounce velocity, use combo_use_wall_bounce() */
+            /* Check if wall bounce is available and defender is near wall */
+            if (attacker_combo && combo_can_wall_bounce(attacker_combo)) {
+                int defender_x = FIXED_TO_INT(defender->x);
+                /* Near left or right wall? */
+                if (defender_x < 50 || defender_x > STAGE_WIDTH - 50 - defender->width) {
+                    /* Apply wall bounce: reverse horizontal velocity, add upward bounce */
+                    defender->vx = -defender->vx * 3 / 4;  /* Bounce back with 75% velocity */
+                    defender->vy = FIXED_FROM_INT(-8);     /* Upward bounce */
+                    defender->on_ground = FALSE;
+                    defender->state = STATE_HITSTUN;       /* Stay in hitstun during bounce */
+                    combo_use_wall_bounce(attacker_combo);
+                }
+            }
         }
         if (move->properties & MOVE_PROP_GROUND_BOUNCE) {
-            /* TODO: on landing, apply upward bounce, use combo_use_ground_bounce() */
+            /* Mark defender for ground bounce on landing */
+            defender->ground_bounce_pending = TRUE;
         }
     }
 

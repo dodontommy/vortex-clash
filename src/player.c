@@ -321,12 +321,26 @@ static void update_airborne(CharacterState *c, uint32_t input) {
 
     int ground_top = GROUND_Y - c->height;
     if (c->y >= FIXED_FROM_INT(ground_top)) {
-        c->y = FIXED_FROM_INT(ground_top);
-        c->vy = 0;
-        c->on_ground = TRUE;
-        c->state = STATE_LANDING;
-        c->state_frame = 0;
-        set_anim(c, ANIM_IDLE);
+        /* Check for ground bounce */
+        if (c->ground_bounce_pending) {
+            /* Apply ground bounce: upward velocity, stay airborne */
+            c->y = FIXED_FROM_INT(ground_top);
+            c->vy = FIXED_FROM_INT(-10);  /* Bounce up */
+            c->ground_bounce_pending = FALSE;
+            c->ground_bounce_used = TRUE;
+            c->on_ground = FALSE;
+            /* Keep some horizontal momentum */
+            c->vx = c->vx * 2 / 3;
+            set_anim(c, ANIM_JUMP);  /* Transition to jump anim */
+        } else {
+            /* Normal landing */
+            c->y = FIXED_FROM_INT(ground_top);
+            c->vy = 0;
+            c->on_ground = TRUE;
+            c->state = STATE_LANDING;
+            c->state_frame = 0;
+            set_anim(c, ANIM_IDLE);
+        }
     }
 
     clamp_stage_bounds(c);

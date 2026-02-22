@@ -73,6 +73,9 @@ typedef struct {
     int anim_looping;         /* cached looping flag */
     /* Hit juice */
     int hit_flash;            /* frames of white flash remaining */
+    bool_t ground_bounce_pending;  /* ground bounce available on landing */
+    int ground_bounce_attacker;    /* player index (0 or 1) who applied ground bounce */
+    bool_t ground_bounce_used;     /* ground bounce already used in this launched state */
 } CharacterState;
 
 /* Forward declaration */

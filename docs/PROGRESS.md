@@ -53,6 +53,7 @@ IN PROGRESS
   - "TRAINING" indicator on HUD
   - Combo count preserved through blocks in training mode (for After 1st to work)
 - [x] **Combo counter HUD:** gold hit count + "HITS" label + damage, fade-out over 1 second after combo drop
+- [x] **Wall bounce / ground bounce:** MOVE_PROP_WALL_BOUNCE triggers bounce when defender near wall, MOVE_PROP_GROUND_BOUNCE triggers bounce on landing
 
 ## Known Issues / Bugs
 - Magic series (chain combos) may break at close range — needs investigation (possibly pushbox/hitbox overlap issue at point-blank)
@@ -61,7 +62,6 @@ IN PROGRESS
 - `is_blocking` convention: currently checks hold-toward (matches code but unusual for FGs) — FIXED, now checks hold-back
 
 ## Phase 7 Remaining (next up)
-- [ ] Wall bounce / ground bounce full implementation
 - [ ] Launcher → air combo transition (super jump cancel on 2H hit)
 - [ ] Wakeup invincibility frames
 - [ ] OTG window in knockdown state
