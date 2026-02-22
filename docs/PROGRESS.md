@@ -97,3 +97,4 @@ IN PROGRESS
 - is_blocking fix: now checks hold-back (away) instead of hold-toward
 - Blockstun pushback: friction decay instead of instant zero
 - Counter-hit system in hitbox_resolve_hit
+- Wall bounce / ground bounce mechanics implemented
