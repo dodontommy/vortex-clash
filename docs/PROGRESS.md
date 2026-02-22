@@ -1,10 +1,21 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 9: Tag Team Mechanics (upcoming)
+Phase 9: Tag Team Mechanics
 
 ## Status
-Phase 7 & 8 COMPLETE
+Phase 8 COMPLETE — Phase 9 IN PROGRESS
+
+## Phase 9 Tasks
+- [ ] Extend PlayerState to hold 2 CharacterState structs (point + assist), implement active_character switching
+- [ ] Raw Tag: hold A1 15+ frames to tag out. Departing character jumps out (vulnerable ~20 frames). Incoming character enters with landing animation (10 frames, invincible frames 1-5). Cannot tag during blockstun/hitstun or assist cooldown
+- [ ] Assist Call: tap A1 (<15 frames) to call off-screen partner. Assist performs predetermined attack then exits. Cooldown 180 frames (300 if assist was hit). Assist takes 150% damage while on screen
+- [ ] DHC (Delayed Hyper Combo): during super active frames, input partner's super + A1 to cancel into partner's super. Costs 1 additional bar
+- [ ] Snapback: QCF+A1 (1 bar). 20f startup, mid hit, -5 on block. On hit forces opponent's point out and drags assist in
+- [ ] Incoming Mixup: when character KO'd or snapped, incoming enters from top of screen. Player can hold direction to influence trajectory. 5 invincible frames on landing
+- [ ] Blue Health: portion of damage becomes recoverable on off-screen partner. Recovers at 5 HP/frame while tagged out, paused during incoming
+- [ ] Team KO: match ends when both characters on one team reach 0 HP
+- [ ] Tests for all new mechanics (tag switching, assist calls, DHC, snapback, blue health recovery)
 
 ## Completed
 
