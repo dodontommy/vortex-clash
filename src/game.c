@@ -9,58 +9,63 @@
 #include <stdio.h>
 #include <string.h>
 
-static void trigger_screen_shake(GameState *game, int damage) {
+static void trigger_screen_shake(GameRenderState *render, int damage) {
     if (damage >= 2000) {
-        game->shake_amplitude = 5.0f;
-        game->shake_frames = 7;
+        render->shake_amplitude = 5.0f;
+        render->shake_frames = 7;
     } else if (damage >= 1500) {
-        game->shake_amplitude = 3.0f;
-        game->shake_frames = 5;
+        render->shake_amplitude = 3.0f;
+        render->shake_frames = 5;
     } else {
-        game->shake_amplitude = 1.5f;
-        game->shake_frames = 3;
+        render->shake_amplitude = 1.5f;
+        render->shake_frames = 3;
     }
-    game->shake_frames_max = game->shake_frames;
+    render->shake_frames_max = render->shake_frames;
 }
 
-static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState *defender, uint32_t defender_input) {
+/* Result of a hit collision check (no state mutation) */
+typedef struct {
+    int hit;            /* 1 = collision detected */
+    int blocking;       /* 1 = defender is blocking */
+    int is_projectile;  /* 1 = projectile spawn instead of melee */
+    int otg_hit;        /* 1 = hit a knocked-down opponent */
+} HitCheckResult;
+
+/* Phase 1: Check collision without mutating state. Returns result. */
+static HitCheckResult check_attack_collision(GameState *game, PlayerState *attacker, PlayerState *defender, uint32_t defender_input) {
+    HitCheckResult result = {0};
     CharacterState *a = &attacker->chars[attacker->active_char];
     CharacterState *d = &defender->chars[defender->active_char];
 
-    /* Only check if attacker is in active frames of attack */
     if (a->state != STATE_ATTACK_ACTIVE || !attacker->current_attack)
-        return;
+        return result;
 
-    /* Check if already hit this opponent in this attack */
     int opp_idx = defender->player_id - 1;
     if (attacker->opponent_hits[opp_idx] == attacker->attack_hit_id)
-        return;
+        return result;
 
     const struct MoveData *move = attacker->current_attack;
 
-    /* Wakeup invincibility: skip hit if defender is invincible */
     if (d->wakeup_timer > 0)
-        return;
+        return result;
 
-    /* OTG gating: hits on knocked-down opponents are restricted */
     if (d->state == STATE_KNOCKDOWN) {
         if (d->state_frame < 5 || d->state_frame > 20)
-            return;  /* Outside OTG window */
+            return result;
         if (!(move->properties & MOVE_PROP_OTG))
-            return;  /* Move can't hit OTG */
+            return result;
         if (!combo_can_otg(&attacker->combo))
-            return;  /* OTG already used this combo */
+            return result;
+        result.otg_hit = 1;
     }
 
-    /* Projectile moves: spawn a projectile entity instead of melee hit */
+    /* Projectile moves: flag for spawn (applied in phase 2) */
     if (move->properties & MOVE_PROP_PROJECTILE) {
-        int owner = attacker->player_id - 1;
-        projectile_spawn(&game->projectiles, owner, attacker, move, d);
-        attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;
-        return;
+        result.hit = 1;
+        result.is_projectile = 1;
+        return result;
     }
 
-    /* Create hitbox */
     Hitbox hb;
     hb.x = move->x_offset;
     hb.y = move->y_offset;
@@ -69,49 +74,55 @@ static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState
     hb.damage = move->damage;
     hb.hit_id = attacker->attack_hit_id;
 
-    /* Create defender hurtbox */
     Hurtbox hurt;
     hurtbox_create(d, &hurt);
 
-    /* Check collision */
     if (hitbox_check_collision(&hb, &hurt, FIXED_TO_INT(a->x), FIXED_TO_INT(a->y), a->facing)) {
-        /* Check if blocking — hit_type comes from move data, no overrides */
-        int blocking = is_blocking(d, a, defender_input, move->hit_type);
-
-        /* Apply hit with combo tracking */
-        int saved_hits = attacker->combo.hit_count;
-        hitbox_resolve_hit(a, d, move, blocking, &attacker->combo, &defender->combo, &game->hitstop_frames,
-                           game->training.active && game->training.counter_hit);
-
-        /* Training mode: preserve combo count through blocks so BLOCK_AFTER_FIRST works */
-        if (blocking && game->training.active) {
-            attacker->combo.hit_count = saved_hits;
-        }
-
-        /* Set hit_confirmed for cancel hierarchy (only on hit, not block) */
-        if (!blocking) {
-            attacker->hit_confirmed = 1;
-        }
-
-        /* Screen shake on hit (not block) */
-        if (!blocking) {
-            trigger_screen_shake(game, move->damage);
-        }
-
-        /* Meter gain: attacker full, defender half */
-        attacker->meter += move->meter_gain;
-        if (attacker->meter > MAX_METER) attacker->meter = MAX_METER;
-        defender->meter += move->meter_gain / 2;
-        if (defender->meter > MAX_METER) defender->meter = MAX_METER;
-
-        /* Track OTG use */
-        if (d->state == STATE_KNOCKDOWN && !blocking) {
-            combo_use_otg(&attacker->combo);
-        }
-
-        /* Mark as hit */
-        attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;
+        result.hit = 1;
+        result.blocking = is_blocking(d, a, defender_input, move->hit_type);
     }
+    return result;
+}
+
+/* Phase 2: Apply hit result (mutates state). */
+static void apply_attack_hit(GameState *game, GameRenderState *render, PlayerState *attacker, PlayerState *defender, HitCheckResult *result) {
+    if (!result->hit) return;
+
+    CharacterState *a = &attacker->chars[attacker->active_char];
+    CharacterState *d = &defender->chars[defender->active_char];
+    const struct MoveData *move = attacker->current_attack;
+    int opp_idx = defender->player_id - 1;
+
+    if (result->is_projectile) {
+        int owner = attacker->player_id - 1;
+        projectile_spawn(&game->projectiles, owner, attacker, move, d);
+        attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;
+        return;
+    }
+
+    int saved_hits = attacker->combo.hit_count;
+    hitbox_resolve_hit(a, d, move, result->blocking, &attacker->combo, &defender->combo, &game->hitstop_frames,
+                       game->training.active && game->training.counter_hit);
+
+    if (result->blocking && game->training.active) {
+        attacker->combo.hit_count = saved_hits;
+    }
+
+    if (!result->blocking) {
+        attacker->hit_confirmed = 1;
+        trigger_screen_shake(render, move->damage);
+    }
+
+    attacker->meter += move->meter_gain;
+    if (attacker->meter > MAX_METER) attacker->meter = MAX_METER;
+    defender->meter += move->meter_gain / 2;
+    if (defender->meter > MAX_METER) defender->meter = MAX_METER;
+
+    if (result->otg_hit && !result->blocking) {
+        combo_use_otg(&attacker->combo);
+    }
+
+    attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;
 }
 
 /* Sync sprite anim params + advance animation for a player */
@@ -124,62 +135,66 @@ static void update_player_anim(SpriteSet *spr, PlayerState *p) {
     advance_anim(c);
 }
 
-static void camera_init(GameState *game) {
-    game->camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT * 0.65f };
-    game->camera.rotation = 0.0f;
-    game->camera.zoom = 2.0f;
-    /* Initial target: midpoint of starting positions */
-    game->camera.target = (Vector2){ STAGE_WIDTH / 2.0f, GROUND_Y - 80.0f };
+static void camera_init(GameRenderState *render) {
+    render->camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT * 0.65f };
+    render->camera.rotation = 0.0f;
+    render->camera.zoom = 2.0f;
+    render->camera.target = (Vector2){ STAGE_WIDTH / 2.0f, GROUND_Y - 80.0f };
 }
 
-static void camera_update(GameState *game) {
+static void camera_update(GameRenderState *render, const GameState *game) {
     const CharacterState *c1 = &game->players[0].chars[game->players[0].active_char];
     const CharacterState *c2 = &game->players[1].chars[game->players[1].active_char];
 
-    /* Midpoint between players (center of their pushboxes) */
     float p1_cx = (float)FIXED_TO_INT(c1->x) + c1->width / 2.0f;
     float p2_cx = (float)FIXED_TO_INT(c2->x) + c2->width / 2.0f;
     float mid_x = (p1_cx + p2_cx) / 2.0f;
 
-    /* Vertical: track lowest player but always show ground */
     float p1_y = (float)FIXED_TO_INT(c1->y);
     float p2_y = (float)FIXED_TO_INT(c2->y);
     float min_y = p1_y < p2_y ? p1_y : p2_y;
-    float target_y = (GROUND_Y - 80.0f + min_y) / 2.0f;  /* blend ground and highest player */
+    float target_y = (GROUND_Y - 80.0f + min_y) / 2.0f;
     if (target_y > GROUND_Y - 80.0f) target_y = GROUND_Y - 80.0f;
 
-    /* Zoom based on horizontal distance between players */
     float dist = p1_cx > p2_cx ? p1_cx - p2_cx : p2_cx - p1_cx;
     float needed_width = dist + CAMERA_PADDING;
     float desired_zoom = SCREEN_WIDTH / needed_width;
     if (desired_zoom < CAMERA_ZOOM_MIN) desired_zoom = CAMERA_ZOOM_MIN;
     if (desired_zoom > CAMERA_ZOOM_MAX) desired_zoom = CAMERA_ZOOM_MAX;
 
-    /* Smooth lerp toward target (avoid jarring snaps) */
     float lerp = 0.1f;
-    game->camera.target.x += (mid_x - game->camera.target.x) * lerp;
-    game->camera.target.y += (target_y - game->camera.target.y) * lerp;
-    game->camera.zoom += (desired_zoom - game->camera.zoom) * lerp;
+    render->camera.target.x += (mid_x - render->camera.target.x) * lerp;
+    render->camera.target.y += (target_y - render->camera.target.y) * lerp;
+    render->camera.zoom += (desired_zoom - render->camera.zoom) * lerp;
 
-    /* Clamp camera so it doesn't show past stage edges */
-    float half_view_w = (SCREEN_WIDTH / game->camera.zoom) / 2.0f;
-    if (game->camera.target.x - half_view_w < 0)
-        game->camera.target.x = half_view_w;
-    if (game->camera.target.x + half_view_w > STAGE_WIDTH)
-        game->camera.target.x = STAGE_WIDTH - half_view_w;
+    float half_view_w = (SCREEN_WIDTH / render->camera.zoom) / 2.0f;
+    if (render->camera.target.x - half_view_w < 0)
+        render->camera.target.x = half_view_w;
+    if (render->camera.target.x + half_view_w > STAGE_WIDTH)
+        render->camera.target.x = STAGE_WIDTH - half_view_w;
 }
 
-static void check_projectile_hits(GameState *game) {
+static void check_projectile_hits(GameState *game, GameRenderState *render, uint32_t def_inputs[2]) {
     for (int i = 0; i < MAX_PROJECTILES; i++) {
         Projectile *proj = &game->projectiles.projectiles[i];
         if (!proj->active) continue;
 
-        /* Determine defender (opposite of owner) */
         int def_idx = 1 - proj->owner;
         PlayerState *defender = &game->players[def_idx];
+        PlayerState *attacker_p = &game->players[proj->owner];
         CharacterState *d = &defender->chars[defender->active_char];
 
-        /* AABB test: projectile world rect vs defender hurtbox */
+        if (d->wakeup_timer > 0) continue;
+
+        if (d->state == STATE_KNOCKDOWN) {
+            if (d->state_frame < 5 || d->state_frame > 20)
+                continue;
+            if (!(proj->properties & MOVE_PROP_OTG))
+                continue;
+            if (!combo_can_otg(&attacker_p->combo))
+                continue;
+        }
+
         int px = FIXED_TO_INT(proj->x);
         int py = FIXED_TO_INT(proj->y);
         int dx = FIXED_TO_INT(d->x);
@@ -188,7 +203,10 @@ static void check_projectile_hits(GameState *game) {
         if (px < dx + d->width && px + proj->width > dx &&
             py < dy + d->height && py + proj->height > dy) {
 
-            /* Build a stack MoveData from projectile fields */
+            if (d->state == STATE_KNOCKDOWN) {
+                combo_use_otg(&attacker_p->combo);
+            }
+
             MoveData proj_move = {0};
             proj_move.damage = proj->damage;
             proj_move.hitstun = proj->hitstun;
@@ -198,16 +216,12 @@ static void check_projectile_hits(GameState *game) {
             proj_move.knockback_y = proj->knockback_y;
             proj_move.properties = proj->properties;
 
-            /* Fake attacker CharacterState for is_blocking direction check */
             CharacterState fake_attacker = {0};
             fake_attacker.x = proj->x;
             fake_attacker.y = proj->y;
 
-            /* Check block using defender's prev_input — projectiles use their hit_type */
-            int blocking = is_blocking(d, &fake_attacker, defender->prev_input, proj->hit_type);
+            int blocking = is_blocking(d, &fake_attacker, def_inputs[def_idx], proj->hit_type);
 
-            /* Resolve hit */
-            PlayerState *attacker_p = &game->players[proj->owner];
             hitbox_resolve_hit(&fake_attacker, d, &proj_move, blocking,
                                &attacker_p->combo, &defender->combo,
                                &game->hitstop_frames,
@@ -215,57 +229,57 @@ static void check_projectile_hits(GameState *game) {
 
             if (!blocking) {
                 attacker_p->hit_confirmed = 1;
-                trigger_screen_shake(game, proj->damage);
+                trigger_screen_shake(render, proj->damage);
             }
 
-            /* Meter gain from projectile hit */
             attacker_p->meter += proj_move.meter_gain;
             if (attacker_p->meter > MAX_METER) attacker_p->meter = MAX_METER;
             defender->meter += proj_move.meter_gain / 2;
             if (defender->meter > MAX_METER) defender->meter = MAX_METER;
 
-            /* Deactivate projectile on hit */
             proj->active = FALSE;
         }
     }
 }
 
-static void update_combo_display(GameState *game) {
+static void update_combo_display(GameRenderState *render, const GameState *game) {
     for (int i = 0; i < 2; i++) {
         if (game->players[i].combo.hit_count >= 2) {
-            game->combo_display[i].display_hit_count = game->players[i].combo.hit_count;
-            game->combo_display[i].display_damage = game->players[i].combo.total_damage;
-            game->combo_display[i].fade_timer = 60;
-        } else if (game->combo_display[i].fade_timer > 0) {
-            game->combo_display[i].fade_timer--;
+            render->combo_display[i].display_hit_count = game->players[i].combo.hit_count;
+            render->combo_display[i].display_damage = game->players[i].combo.total_damage;
+            render->combo_display[i].fade_timer = 60;
+        } else if (render->combo_display[i].fade_timer > 0) {
+            render->combo_display[i].fade_timer--;
         }
     }
 }
 
-void game_init(GameState *game) {
+void game_init(GameState *game, GameRenderState *render) {
     player_init(&game->players[0], 1, STAGE_WIDTH / 2 - 200, GROUND_Y - 80, CHAR_RYKER);
     player_init(&game->players[1], 2, STAGE_WIDTH / 2 + 150, GROUND_Y - 80, CHAR_RYKER);
     input_init(&game->inputs[0]);
     input_init(&game->inputs[1]);
-    sprite_load(&game->sprites[0], "ryker");
-    sprite_load(&game->sprites[1], "ryker");  /* Both chars use Ryker for now */
     projectile_init(&game->projectiles);
     game->hitstop_frames = 0;
     game->frame_count = 0;
     game->ko_winner = -1;
     game->ko_timer = 0;
-    game->running = TRUE;
-    game->debug_draw = FALSE;
-    memset(game->combo_display, 0, sizeof(game->combo_display));
     memset(&game->training, 0, sizeof(TrainingState));
-    input_bindings_init(&game->bindings[0], 1);
-    input_bindings_init(&game->bindings[1], 2);
-    camera_init(game);
+
+    /* Render state */
+    sprite_load(&render->sprites[0], "ryker");
+    sprite_load(&render->sprites[1], "ryker");
+    render->running = TRUE;
+    render->debug_draw = FALSE;
+    memset(render->combo_display, 0, sizeof(render->combo_display));
+    input_bindings_init(&render->bindings[0], 1);
+    input_bindings_init(&render->bindings[1], 2);
+    camera_init(render);
     render_init();
     hitbox_init();
 }
 
-void game_update(GameState *game) {
+void game_update(GameState *game, GameRenderState *render) {
     /* KO freeze: countdown then reset */
     if (game->ko_timer > 0) {
         game->ko_timer--;
@@ -278,7 +292,7 @@ void game_update(GameState *game) {
     }
 
     /* Toggle debug draw */
-    if (IsKeyPressed(KEY_F1)) game->debug_draw = !game->debug_draw;
+    if (IsKeyPressed(KEY_F1)) render->debug_draw = !render->debug_draw;
 
     /* Toggle training mode / menu (F2 or gamepad Start/Menu button) */
     int menu_toggle = IsKeyPressed(KEY_F2) ||
@@ -298,13 +312,13 @@ void game_update(GameState *game) {
         if (game->training.remap_open && game->training.remap_listening) {
             int new_key = input_scan_key();
             if (new_key >= 0) {
-                game->bindings[game->training.remap_target].buttons[game->training.remap_cursor].keyboard_key = new_key;
+                render->bindings[game->training.remap_target].buttons[game->training.remap_cursor].keyboard_key = new_key;
                 game->training.remap_listening = FALSE;
             }
             int gp = game->training.remap_target;
             int new_btn = input_scan_gamepad(gp);
             if (new_btn >= 0) {
-                game->bindings[game->training.remap_target].buttons[game->training.remap_cursor].gamepad_button = new_btn;
+                render->bindings[game->training.remap_target].buttons[game->training.remap_cursor].gamepad_button = new_btn;
                 game->training.remap_listening = FALSE;
             }
             /* Escape/B cancels listening */
@@ -312,7 +326,7 @@ void game_update(GameState *game) {
                 (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))) {
                 game->training.remap_listening = FALSE;
             }
-            update_combo_display(game);
+            update_combo_display(render, game);
             return;
         }
 
@@ -339,7 +353,7 @@ void game_update(GameState *game) {
             if (nav_back) {
                 game->training.remap_open = FALSE;
             }
-            update_combo_display(game);
+            update_combo_display(render, game);
             return;
         }
 
@@ -358,19 +372,18 @@ void game_update(GameState *game) {
         /* Confirm actions */
         if (nav_confirm) {
             if (game->training.cursor == 4) {
-                /* Controls: open remap sub-menu for P1 */
                 game->training.remap_open = TRUE;
                 game->training.remap_cursor = 0;
                 game->training.remap_listening = FALSE;
                 game->training.remap_target = 0;
             } else if (game->training.cursor == 5) {
-                game->running = FALSE;
+                render->running = FALSE;
                 return;
             } else {
                 game->training.menu_open = FALSE;
             }
         }
-        update_combo_display(game);
+        update_combo_display(render, game);
         return; /* Game paused while menu is open */
     }
 
@@ -386,9 +399,9 @@ void game_update(GameState *game) {
         return;  /* Skip update during hitstop */
 
     /* Poll inputs — P1 uses keyboard + gamepad 0 */
-    uint32_t p1_raw = input_poll_bound(1, INPUT_SOURCE_KEYBOARD, &game->bindings[0])
-                     | input_poll_bound(1, INPUT_SOURCE_GAMEPAD, &game->bindings[0]);
-    uint32_t p2_raw = input_poll_bound(2, INPUT_SOURCE_GAMEPAD, &game->bindings[1]);
+    uint32_t p1_raw = input_poll_bound(1, INPUT_SOURCE_KEYBOARD, &render->bindings[0])
+                     | input_poll_bound(1, INPUT_SOURCE_GAMEPAD, &render->bindings[0]);
+    uint32_t p2_raw = input_poll_bound(2, INPUT_SOURCE_GAMEPAD, &render->bindings[1]);
 
     /* Training mode: override P2 (dummy) input */
     if (game->training.active) {
@@ -405,18 +418,15 @@ void game_update(GameState *game) {
     input_update(&game->inputs[0], p1_raw);
     input_update(&game->inputs[1], p2_raw);
 
-    /* Update facing FIRST — so inputs and attacks are processed with correct facing.
-     * This must happen before player_update so that buffered attacks after crossups
-     * fire in the right direction. */
+    /* Update facing FIRST — so inputs and attacks are processed with correct facing */
     player_update_facing(&game->players[0], &game->players[1]);
 
-    /* Use buffered input for players */
     fixed_t p2x = game->players[1].chars[game->players[1].active_char].x;
     fixed_t p1x = game->players[0].chars[game->players[0].active_char].x;
     player_update(&game->players[0], input_get_current(&game->inputs[0]), &game->inputs[0], p2x);
     player_update(&game->players[1], input_get_current(&game->inputs[1]), &game->inputs[1], p1x);
-    update_player_anim(&game->sprites[0], &game->players[0]);
-    update_player_anim(&game->sprites[1], &game->players[1]);
+    update_player_anim(&render->sprites[0], &game->players[0]);
+    update_player_anim(&render->sprites[1], &game->players[1]);
     player_resolve_collisions(&game->players[0], &game->players[1]);
 
     /* Reset attacker combo when defender leaves hitstun (returns to neutral) */
@@ -426,7 +436,6 @@ void game_update(GameState *game) {
         if (!def_cs->in_hitstun && game->players[i].combo.hit_count > 0 &&
             def_cs->state != STATE_HITSTUN && def_cs->state != STATE_BLOCKSTUN) {
             combo_reset(&game->players[i].combo);
-            /* Training: reset HP/meter on combo drop */
             if (game->training.active && game->training.hp_meter_reset) {
                 for (int p = 0; p < 2; p++) {
                     CharacterState *ch = &game->players[p].chars[game->players[p].active_char];
@@ -441,7 +450,6 @@ void game_update(GameState *game) {
     if (game->training.active && game->training.block_mode != BLOCK_NONE) {
         CharacterState *p1c = &game->players[0].chars[game->players[0].active_char];
         CharacterState *p2c = &game->players[1].chars[game->players[1].active_char];
-        /* Hold back = opposite direction from P1 */
         uint32_t hold_back = (p1c->x < p2c->x) ? INPUT_RIGHT : INPUT_LEFT;
         switch (game->training.block_mode) {
             case BLOCK_ALL:
@@ -459,44 +467,46 @@ void game_update(GameState *game) {
         }
     }
 
-    /* Check for attack hits */
-    check_attack_hit(game, &game->players[0], &game->players[1], p2_def_input);
-    check_attack_hit(game, &game->players[1], &game->players[0], p1_raw);
+    /* Check for attack hits — snapshot both, then apply both (no P1 priority) */
+    HitCheckResult hit_p1 = check_attack_collision(game, &game->players[0], &game->players[1], p2_def_input);
+    HitCheckResult hit_p2 = check_attack_collision(game, &game->players[1], &game->players[0], p1_raw);
+    apply_attack_hit(game, render, &game->players[0], &game->players[1], &hit_p1);
+    apply_attack_hit(game, render, &game->players[1], &game->players[0], &hit_p2);
 
     /* Update projectiles: movement + despawn, then check hits */
     projectile_update(&game->projectiles);
-    check_projectile_hits(game);
+    uint32_t proj_def_inputs[2] = { p1_raw, p2_def_input };
+    check_projectile_hits(game, render, proj_def_inputs);
 
     /* KO check: did either player's HP drop to 0? (skip in training mode) */
     if (game->ko_winner < 0 && !game->training.active) {
         CharacterState *c1 = &game->players[0].chars[game->players[0].active_char];
         CharacterState *c2 = &game->players[1].chars[game->players[1].active_char];
         if (c1->hp <= 0) {
-            game->ko_winner = 1;  /* P2 wins */
+            game->ko_winner = 1;
             game->ko_timer = KO_FREEZE_FRAMES;
         } else if (c2->hp <= 0) {
-            game->ko_winner = 0;  /* P1 wins */
+            game->ko_winner = 0;
             game->ko_timer = KO_FREEZE_FRAMES;
         }
     }
 
     /* Decay screen shake */
-    if (game->shake_frames > 0) game->shake_frames--;
+    if (render->shake_frames > 0) render->shake_frames--;
 
-    camera_update(game);
-    update_combo_display(game);
+    camera_update(render, game);
+    update_combo_display(render, game);
     game->frame_count++;
 }
 
-void game_render(const GameState *game) {
-    render_stage_bg();  /* Clear background (screen space) */
+void game_render(const GameState *game, const GameRenderState *render) {
+    render_stage_bg();
 
     /* --- World space rendering (inside camera + screen shake) --- */
-    Camera2D cam = game->camera;
-    if (game->shake_frames > 0) {
-        float decay = (float)game->shake_frames / (float)(game->shake_frames_max > 0 ? game->shake_frames_max : 1);
-        float amp = game->shake_amplitude * decay;
-        /* Square wave alternating shake */
+    Camera2D cam = render->camera;
+    if (render->shake_frames > 0) {
+        float decay = (float)render->shake_frames / (float)(render->shake_frames_max > 0 ? render->shake_frames_max : 1);
+        float amp = render->shake_amplitude * decay;
         cam.target.x += ((game->frame_count % 2) * 2 - 1) * amp;
         cam.target.y += (((game->frame_count + 1) % 2) * 2 - 1) * amp * 0.4f;
     }
@@ -510,10 +520,10 @@ void game_render(const GameState *game) {
         const CharacterState *cs = &pl->chars[pl->active_char];
         int cx = FIXED_TO_INT(cs->x);
         int cy = FIXED_TO_INT(cs->y);
-        if (game->sprites[i].loaded &&
+        if (render->sprites[i].loaded &&
             cs->current_anim >= 0 && cs->current_anim < ANIM_COUNT &&
-            game->sprites[i].anims[cs->current_anim].frame_count > 0) {
-            const Animation *anim = &game->sprites[i].anims[cs->current_anim];
+            render->sprites[i].anims[cs->current_anim].frame_count > 0) {
+            const Animation *anim = &render->sprites[i].anims[cs->current_anim];
             int draw_w = anim->frame_width;
             int draw_h = anim->frame_height;
             int draw_x = cx + cs->width / 2 - draw_w / 2;
@@ -521,22 +531,22 @@ void game_render(const GameState *game) {
 
             /* Defender vibration during hitstop */
             if (hitbox_in_hitstop(&game->hitstop_frames) && cs->in_hitstun) {
-                draw_x += (game->frame_count % 2) * 4 - 2;  /* +/-2px horizontal */
+                draw_x += (game->frame_count % 2) * 4 - 2;
             }
 
-            sprite_draw(&game->sprites[i], cs->current_anim, cs->anim_frame,
+            sprite_draw(&render->sprites[i], cs->current_anim, cs->anim_frame,
                         draw_x, draw_y, cs->facing, draw_w, draw_h);
 
             /* Hit flash: bright white overlay for impact */
             if (cs->hit_flash > 0) {
                 BeginBlendMode(BLEND_ADDITIVE);
-                sprite_draw(&game->sprites[i], cs->current_anim, cs->anim_frame,
+                sprite_draw(&render->sprites[i], cs->current_anim, cs->anim_frame,
                             draw_x, draw_y, cs->facing, draw_w, draw_h);
                 EndBlendMode();
             }
 
             /* Player label above sprite (world space, debug only) */
-            if (game->debug_draw) {
+            if (render->debug_draw) {
                 char plbl[4];
                 snprintf(plbl, sizeof(plbl), "P%d", pl->player_id);
                 DrawText(plbl, draw_x + draw_w/2 - 10, draw_y - 20, 16,
@@ -553,7 +563,6 @@ void game_render(const GameState *game) {
         if (!proj->active) continue;
         int px = FIXED_TO_INT(proj->x);
         int py = FIXED_TO_INT(proj->y);
-        /* Owner color: P1=cyan, P2=orange; brighter for higher strength */
         Color fill;
         if (proj->owner == 0) {
             int bright = 150 + proj->strength * 50;
@@ -579,15 +588,15 @@ void game_render(const GameState *game) {
                 int lx = FIXED_TO_INT(cs->x) + cs->width / 2 - 20;
                 int ly = FIXED_TO_INT(cs->y) - 20;
                 Color label_color = move->move_type == MOVE_TYPE_SUPER
-                    ? (Color){ 255, 215, 0, 255 }   /* gold for supers */
-                    : (Color){ 0, 255, 255, 255 };   /* cyan for specials */
+                    ? (Color){ 255, 215, 0, 255 }
+                    : (Color){ 0, 255, 255, 255 };
                 DrawText(move->name, lx, ly, 10, label_color);
             }
         }
     }
 
     /* Debug hitbox visualization (world space) */
-    if (game->debug_draw) {
+    if (render->debug_draw) {
         for (int i = 0; i < 2; i++) {
             const PlayerState *pl = &game->players[i];
             const CharacterState *cs = &pl->chars[pl->active_char];
@@ -599,7 +608,6 @@ void game_render(const GameState *game) {
 
             if (cs->state == STATE_ATTACK_ACTIVE && pl->current_attack) {
                 const struct MoveData *move = pl->current_attack;
-                /* Skip debug hitbox for projectile moves (the projectile entity has its own) */
                 if (!(move->properties & MOVE_PROP_PROJECTILE)) {
                     int hx = cx + (cs->facing == 1 ? move->x_offset : -move->x_offset - move->width);
                     int hy = cy + move->y_offset;
@@ -608,7 +616,6 @@ void game_render(const GameState *game) {
             }
         }
 
-        /* Debug draw projectile hitboxes */
         for (int i = 0; i < MAX_PROJECTILES; i++) {
             const Projectile *proj = &game->projectiles.projectiles[i];
             if (!proj->active) continue;
@@ -635,10 +642,9 @@ void game_render(const GameState *game) {
 
     /* Combo counters */
     for (int i = 0; i < 2; i++) {
-        const ComboDisplayState *cd = &game->combo_display[i];
+        const ComboDisplayState *cd = &render->combo_display[i];
         if (cd->fade_timer > 0 && cd->display_hit_count >= 2) {
             unsigned char alpha;
-            /* Check if combo is still active (player still has hits) */
             if (game->players[i].combo.hit_count >= 2) {
                 alpha = 255;
             } else {
@@ -661,12 +667,13 @@ void game_render(const GameState *game) {
                              game->training.hp_meter_reset,
                              game->training.remap_open, game->training.remap_cursor,
                              game->training.remap_listening,
-                             &game->bindings[game->training.remap_target]);
+                             &render->bindings[game->training.remap_target]);
     }
 }
 
-void game_shutdown(GameState *game) {
-    sprite_unload(&game->sprites[0]);
-    sprite_unload(&game->sprites[1]);
+void game_shutdown(GameState *game, GameRenderState *render) {
+    (void)game;
+    sprite_unload(&render->sprites[0]);
+    sprite_unload(&render->sprites[1]);
     render_shutdown();
 }

@@ -18,7 +18,8 @@ int main(void) {
     InitWindow(screenWidth, screenHeight, "Vortex Clash");
 
     GameState game;
-    game_init(&game);
+    GameRenderState render;
+    game_init(&game, &render);
 
     /* Fixed timestep: locked 60fps */
     const int targetFPS = 60;
@@ -28,7 +29,7 @@ int main(void) {
 
     SetTargetFPS(targetFPS);
 
-    while (!WindowShouldClose() && game.running) {
+    while (!WindowShouldClose() && render.running) {
         double newTime = GetTime();
         double frameTime = newTime - currentTime;
         currentTime = newTime;
@@ -38,22 +39,22 @@ int main(void) {
         /* Update at fixed 60fps timestep, multiple ticks for speed */
         while (accumulator >= updateInterval) {
             if (IsKeyPressed(KEY_ESCAPE)) {
-                game.running = FALSE;
+                render.running = FALSE;
                 break;
             }
             for (int i = 0; i < game_speed; i++) {
-                game_update(&game);
+                game_update(&game, &render);
             }
             accumulator -= updateInterval;
         }
 
         /* Render */
         BeginDrawing();
-        game_render(&game);
+        game_render(&game, &render);
         EndDrawing();
     }
 
-    game_shutdown(&game);
+    game_shutdown(&game, &render);
     CloseWindow();
     return 0;
 }

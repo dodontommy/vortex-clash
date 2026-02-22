@@ -512,6 +512,7 @@ static void update_attack_recovery(PlayerState *p, CharacterState *c, const stru
             set_anim(c, ANIM_JUMP);
         } else if (p->attack_from_crouch) {
             c->state = STATE_CROUCH;
+            c->vx = 0;
             set_anim(c, ANIM_CROUCH);
             c->anim_frame = 999;  /* last frame — already crouched */
             /* Physically enter crouch if not already crouched
@@ -806,18 +807,15 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
     /* --- Combo buffer: replay stored input when cancel level opens --- */
     if (!action_taken && p->buffered_button) {
         if (p->frame_counter - p->buffered_button_frame < COMBO_BUFFER_WINDOW) {
-            {
-                const struct MoveData *move = resolve_normal(p, p->buffered_button, input);
-                if (move && can_cancel_into(p, lvl, move)) {
-                    start_attack_move(p, move);
-                    p->buffered_button = 0;
-                    action_taken = 1;
-                } else if (!can_cancel(lvl, ACTION_NORMAL)) {
-                    /* Cancel level not open yet — keep buffer alive */
-                } else {
-                    p->buffered_button = 0; /* Level open but chain rejected */
-                    action_taken = 1;
-                }
+            const struct MoveData *move = resolve_normal(p, p->buffered_button, input);
+            if (move && can_cancel_into(p, lvl, move)) {
+                start_attack_move(p, move);
+                p->buffered_button = 0;
+                action_taken = 1;
+            } else if (!can_cancel(lvl, ACTION_NORMAL)) {
+                /* Cancel level not open yet — keep buffer alive */
+            } else {
+                p->buffered_button = 0; /* Level open but chain rejected */
             }
         } else {
             p->buffered_button = 0; /* Expired */
@@ -1098,8 +1096,6 @@ static const char *state_to_string(CharacterStateEnum state) {
         case STATE_ATTACK_RECOVERY: return "ATK_RECV";
         case STATE_HITSTUN: return "HITSTUN";
         case STATE_BLOCKSTUN: return "BLOCKSTUN";
-        case STATE_BLOCK_STANDING: return "BLOCK_ST";
-        case STATE_BLOCK_CROUCHING: return "BLOCK_CR";
         case STATE_KNOCKDOWN: return "KNOCKDOWN";
         default: return "UNKNOWN";
     }

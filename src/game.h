@@ -45,20 +45,10 @@ typedef struct {
 #define CAMERA_ZOOM_MAX   2.2f
 #define CAMERA_PADDING    300  /* world pixels of margin around both players */
 
-/* Game state with two players.
- *
- * === GGPO Serialization Notes ===
- * SIMULATION STATE (must be serialized for rollback):
- *   players[2]      — full PlayerState including CharacterState, combo, meter
- *   inputs[2]       — input buffers for motion detection
- *   hitstop_frames   — shared hitstop counter
- *   frame_count      — global frame counter
- *
- * RENDER-ONLY STATE (local, not serialized):
- *   sprites, camera, shake_*, running, debug_draw
- */
+/* Simulation state — flat, deterministic, serializable for GGPO rollback.
+ * No pointers (except current_attack, deferred to Phase 12).
+ * No floats. All values are int or fixed_t. */
 typedef struct {
-    /* --- Simulation state (serialize for GGPO) --- */
     PlayerState players[2];
     InputBuffer inputs[2];
     ProjectileState projectiles;
@@ -66,10 +56,14 @@ typedef struct {
     int frame_count;
     int ko_winner;          /* -1 = none, 0 = P1 wins, 1 = P2 wins */
     int ko_timer;           /* Freeze countdown after KO */
+    TrainingState training; /* Affects simulation: block overrides, counter-hit, HP reset */
+} GameState;
 
-    /* --- Render-only state (local) --- */
-    InputBindings bindings[2];  /* key/gamepad bindings for P1 and P2 */
-    SpriteSet sprites[2];  /* sprite sets for P1 and P2 */
+/* Render-only state — local to each client, NOT serialized for rollback.
+ * Contains floats, GPU resources, and visual-only data. */
+typedef struct {
+    InputBindings bindings[2];
+    SpriteSet sprites[2];
     Camera2D camera;
     bool_t running;
     bool_t debug_draw;
@@ -77,17 +71,16 @@ typedef struct {
     float shake_amplitude;
     int shake_frames;
     int shake_frames_max;
-    /* Combo counter + training mode */
+    /* Combo counter display */
     ComboDisplayState combo_display[2];
-    TrainingState training;
-} GameState;
+} GameRenderState;
 
 #define KO_FREEZE_FRAMES 120
 
 /* Game functions */
-void game_init(GameState *game);
-void game_update(GameState *game);
-void game_render(const GameState *game);
-void game_shutdown(GameState *game);
+void game_init(GameState *game, GameRenderState *render);
+void game_update(GameState *game, GameRenderState *render);
+void game_render(const GameState *game, const GameRenderState *render);
+void game_shutdown(GameState *game, GameRenderState *render);
 
 #endif /* GAME_H */
