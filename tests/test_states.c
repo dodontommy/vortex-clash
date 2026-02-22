@@ -305,11 +305,13 @@ static void test_attack_5m(void) {
     printf("test_attack_5m:\n");
     PlayerState p;
     player_init(&p, 1, 200, 400, CHAR_RYKER);
+    const MoveData *move = character_get_normal(CHAR_RYKER, NORMAL_5M);
     commit_attack_from_idle(&p, INPUT_MEDIUM);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "5M enters ATTACK_STARTUP");
-    tick(&p, 0, 10); /* remaining startup (11 total, 1 on commit frame) */
+    tick(&p, 0, move->startup_frames); /* through remaining startup */
     ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5M enters ATTACK_ACTIVE");
-    tick(&p, 0, 3); /* active */
+    int active_frames = move->active_end - move->active_start + 1;
+    tick(&p, 0, active_frames);
     ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "5M enters ATTACK_RECOVERY");
 }
 
@@ -508,20 +510,24 @@ static void test_combo_buffer_during_recovery(void) {
     printf("test_combo_buffer_during_recovery:\n");
     PlayerState p;
     player_init(&p, 1, 200, 400, CHAR_RYKER);
+    const MoveData *jab = character_get_normal(CHAR_RYKER, NORMAL_5L);
     /* Start 5L, go through to recovery (whiff) */
     commit_attack_from_idle(&p, INPUT_LIGHT);
-    tick(&p, 0, 4);  /* remaining startup */
-    tick(&p, 0, 3);  /* active */
+    tick(&p, 0, jab->startup_frames);  /* through startup */
+    int jab_active = jab->active_end - jab->active_start + 1;
+    tick(&p, 0, jab_active);  /* active */
     ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "in recovery");
-    /* Tick 6 frames into recovery, then press M near the end.
-     * 5L has 10 recovery frames. Press M at frame 7 so the 5-frame buffer
-     * window covers the remaining 3 recovery frames + first idle frame. */
-    tick(&p, 0, 6);
-    tick(&p, INPUT_MEDIUM, 1);  /* recovery frame 7 */
+    /* Press M near end of recovery: 3 frames before it ends.
+     * The 5-frame buffer window covers the remaining recovery + first idle frame. */
+    int press_at = jab->recovery_frames - 3;
+    if (press_at < 1) press_at = 1;
+    tick(&p, 0, press_at);
+    tick(&p, INPUT_MEDIUM, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_RECOVERY, "still in recovery");
     ASSERT(p.buffered_button != 0, "M is buffered");
-    /* Tick remaining recovery (3 frames) + 1 for buffer to fire on idle */
-    tick(&p, 0, 4);
+    /* Tick remaining recovery + 1 for buffer to fire on idle */
+    int remaining = jab->recovery_frames - press_at - 1;
+    tick(&p, 0, remaining + 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "buffered M fires on idle");
     ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M), "correct attack from buffer");
 }
@@ -647,8 +653,8 @@ static void test_air_attack_jl(void) {
     tick(&p, INPUT_UP, 1);
     tick(&p, 0, 4);  /* through jump squat */
     ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne");
-    /* Press L while airborne — enters pending buffer, then commits */
-    commit_attack_from_idle(&p, INPUT_LIGHT);
+    /* Press L while airborne — commits immediately (no pending buffer in air) */
+    tick(&p, INPUT_LIGHT, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "j.L started from air");
     ASSERT(p.current_attack == character_get_normal(0, NORMAL_JL), "correct move: j.L");
 }
@@ -663,8 +669,8 @@ static void test_air_attack_preserves_momentum(void) {
     ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne");
     fixed_t vx_before = active(&p)->vx;
     ASSERT(vx_before != 0, "has horizontal momentum");
-    /* Start air attack */
-    commit_attack_from_idle(&p, INPUT_LIGHT);
+    /* Start air attack — commits immediately, no air friction on normal jump */
+    tick(&p, INPUT_LIGHT, 1);
     ASSERT(active(&p)->vx == vx_before, "vx preserved after air attack start");
 }
 
@@ -676,8 +682,8 @@ static void test_air_attack_gravity(void) {
     tick(&p, INPUT_UP, 1);
     tick(&p, 0, 4);
     ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne");
-    /* Start air attack */
-    commit_attack_from_idle(&p, INPUT_LIGHT);
+    /* Start air attack — commits immediately in air */
+    tick(&p, INPUT_LIGHT, 1);
     fixed_t vy_before = active(&p)->vy;
     /* Tick 1 frame — gravity should increase vy */
     tick(&p, 0, 1);
@@ -939,7 +945,7 @@ static void test_projectile_spawn(void) {
     ASSERT(fireball != NULL, "236L move exists");
     ASSERT(fireball->properties & MOVE_PROP_PROJECTILE, "236L is a projectile");
     /* Spawn */
-    int ok = projectile_spawn(&ps, 0, &p, fireball);
+    int ok = projectile_spawn(&ps, 0, &p, fireball, NULL);
     ASSERT(ok == 1, "spawn succeeds");
     ASSERT(ps.projectiles[0].active == TRUE, "projectile is active");
     ASSERT(ps.projectiles[0].owner == 0, "owner is player 0");
@@ -956,13 +962,13 @@ static void test_projectile_one_per_player(void) {
     player_init(&p2, 2, 800, 520, CHAR_RYKER);
     const MoveData *fireball = character_get_special(CHAR_RYKER, MOTION_QCF, INPUT_LIGHT);
     /* First spawn for P1 */
-    int ok1 = projectile_spawn(&ps, 0, &p1, fireball);
+    int ok1 = projectile_spawn(&ps, 0, &p1, fireball, NULL);
     ASSERT(ok1 == 1, "P1 first spawn succeeds");
     /* Second spawn for same player should fail */
-    int ok2 = projectile_spawn(&ps, 0, &p1, fireball);
+    int ok2 = projectile_spawn(&ps, 0, &p1, fireball, NULL);
     ASSERT(ok2 == 0, "P1 second spawn blocked (one per player)");
     /* P2 can still spawn */
-    int ok3 = projectile_spawn(&ps, 1, &p2, fireball);
+    int ok3 = projectile_spawn(&ps, 1, &p2, fireball, NULL);
     ASSERT(ok3 == 1, "P2 spawn succeeds (different player)");
 }
 
@@ -973,7 +979,7 @@ static void test_projectile_movement(void) {
     PlayerState p;
     player_init(&p, 1, 400, 520, CHAR_RYKER);
     const MoveData *fireball = character_get_special(CHAR_RYKER, MOTION_QCF, INPUT_LIGHT);
-    projectile_spawn(&ps, 0, &p, fireball);
+    projectile_spawn(&ps, 0, &p, fireball, NULL);
     fixed_t x_before = ps.projectiles[0].x;
     projectile_update(&ps);
     ASSERT(ps.projectiles[0].x > x_before, "projectile moved right after update");
@@ -987,7 +993,7 @@ static void test_projectile_despawn_bounds(void) {
     PlayerState p;
     player_init(&p, 1, 400, 520, CHAR_RYKER);
     const MoveData *fireball = character_get_special(CHAR_RYKER, MOTION_QCF, INPUT_LIGHT);
-    projectile_spawn(&ps, 0, &p, fireball);
+    projectile_spawn(&ps, 0, &p, fireball, NULL);
     /* Run updates until despawned */
     int frames = 0;
     while (ps.projectiles[0].active && frames < 200) {
@@ -1005,11 +1011,377 @@ static void test_projectile_despawn_on_hit(void) {
     PlayerState p;
     player_init(&p, 1, 400, 520, CHAR_RYKER);
     const MoveData *fireball = character_get_special(CHAR_RYKER, MOTION_QCF, INPUT_LIGHT);
-    projectile_spawn(&ps, 0, &p, fireball);
+    projectile_spawn(&ps, 0, &p, fireball, NULL);
     ASSERT(ps.projectiles[0].active == TRUE, "projectile active before hit");
     /* Simulate hit by deactivating (game.c does this on collision) */
     ps.projectiles[0].active = FALSE;
     ASSERT(ps.projectiles[0].active == FALSE, "projectile deactivated on hit");
+}
+
+/* ========== POLISH FIX TESTS ========== */
+
+static void test_dash_jump_speed_capped(void) {
+    printf("test_dash_jump_speed_capped:\n");
+    PlayerState p;
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    /* Start a dash: double-tap right */
+    tick(&p, INPUT_RIGHT, 1);
+    tick(&p, 0, 2);
+    tick(&p, INPUT_RIGHT, 1);
+    ASSERT(active(&p)->state == STATE_DASH_FORWARD, "dashing forward");
+    /* Jump cancel from dash */
+    tick(&p, INPUT_UP, 1);
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "jump squat from dash");
+    tick(&p, 0, 4);  /* through jump squat */
+    ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne from dash jump");
+    /* vx should be capped at DASH_JUMP_MAX_SPEED */
+    ASSERT(active(&p)->vx <= DASH_JUMP_MAX_SPEED, "dash jump vx capped");
+    ASSERT(active(&p)->vx > 0, "dash jump still moves forward");
+}
+
+static void test_air_friction_dash_jump_only(void) {
+    printf("test_air_friction_dash_jump_only:\n");
+    PlayerState p;
+
+    /* Normal forward jump: NO friction — momentum preserved */
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    tick(&p, INPUT_UP | INPUT_RIGHT, 1);
+    tick(&p, INPUT_RIGHT, 4);  /* through jump squat */
+    ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne from normal jump");
+    fixed_t normal_vx = active(&p)->vx;
+    tick(&p, 0, 10);
+    ASSERT(active(&p)->vx == normal_vx, "normal jump: no air friction");
+
+    /* Dash jump: HAS friction — momentum decays */
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    tick(&p, INPUT_RIGHT, 1);
+    tick(&p, 0, 2);
+    tick(&p, INPUT_RIGHT, 1);
+    tick(&p, INPUT_UP, 1);
+    tick(&p, 0, 4);  /* through jump squat */
+    ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne from dash jump");
+    ASSERT(active(&p)->dash_jump == TRUE, "dash_jump flag set");
+    fixed_t dash_vx = active(&p)->vx;
+    tick(&p, 0, 10);
+    ASSERT(active(&p)->vx < dash_vx, "dash jump: air friction slowed speed");
+}
+
+static void test_projectile_close_range_clamp(void) {
+    printf("test_projectile_close_range_clamp:\n");
+    ProjectileState ps;
+    projectile_init(&ps);
+    PlayerState p;
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    /* Create a defender right next to the attacker */
+    CharacterState defender;
+    memset(&defender, 0, sizeof(defender));
+    defender.x = FIXED_FROM_INT(420);  /* very close — 20px gap, less than fireball x_offset of 60 */
+    defender.width = 50;
+    const MoveData *fireball = character_get_special(CHAR_RYKER, MOTION_QCF, INPUT_LIGHT);
+    int ok = projectile_spawn(&ps, 0, &p, fireball, &defender);
+    ASSERT(ok == 1, "spawn succeeds at close range");
+    /* Projectile should NOT be past the defender */
+    ASSERT(ps.projectiles[0].x < defender.x, "projectile spawns in front of defender, not past");
+}
+
+static void test_pushbox_no_over_separation(void) {
+    printf("test_pushbox_no_over_separation:\n");
+    PlayerState p1, p2;
+    /* Place players overlapping by 1 pixel */
+    player_init(&p1, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&p2, 2, 449, GROUND_Y - 80, CHAR_RYKER);  /* P1 width=50, so right=450, P2 left=449 => 1px overlap */
+    fixed_t p1_before = active(&p1)->x;
+    fixed_t p2_before = active(&p2)->x;
+    player_resolve_collisions(&p1, &p2);
+    /* Both should have moved, but only by 1 pixel total (not 2) */
+    fixed_t p1_moved = p1_before - active(&p1)->x;
+    fixed_t p2_moved = active(&p2)->x - p2_before;
+    fixed_t total_push = p1_moved + p2_moved;
+    /* With ceiling division, 1px overlap => push = (1+1)/2 = 1 each side = 2 total.
+     * Previously was overlap/2+1 = 0+1 = 1 each = 2 total. Should be similar but no extra. */
+    ASSERT(total_push <= FIXED_FROM_INT(2), "pushbox separation is minimal for small overlap");
+    /* Verify they are no longer overlapping */
+    int c1_right = FIXED_TO_INT(active(&p1)->x) + active(&p1)->width;
+    int c2_left = FIXED_TO_INT(active(&p2)->x);
+    ASSERT(c1_right <= c2_left, "no longer overlapping after push");
+}
+
+static void test_air_allows_crossup(void) {
+    printf("test_air_allows_crossup:\n");
+    PlayerState p1, p2;
+    player_init(&p1, 1, 425, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&p2, 2, 425, GROUND_Y - 80, CHAR_RYKER);
+    /* Make P1 airborne, overlapping P2 horizontally */
+    active(&p1)->on_ground = FALSE;
+    active(&p1)->y = FIXED_FROM_INT(GROUND_Y - 150);
+    fixed_t x_before = active(&p1)->x;
+    /* Resolve — should NOT push while airborne (allows crossups) */
+    player_resolve_collisions(&p1, &p2);
+    ASSERT(active(&p1)->x == x_before, "no pushbox while airborne — crossups allowed");
+}
+
+static void test_landing_resolves_side(void) {
+    printf("test_landing_resolves_side:\n");
+    PlayerState p1, p2;
+    /* Place players overlapping — both grounded, pushbox should resolve */
+    player_init(&p1, 1, 420, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&p2, 2, 430, GROUND_Y - 80, CHAR_RYKER);
+    /* Both on ground — pushbox kicks in */
+    player_resolve_collisions(&p1, &p2);
+    int p1_right = FIXED_TO_INT(active(&p1)->x) + active(&p1)->width;
+    int p2_left = FIXED_TO_INT(active(&p2)->x);
+    ASSERT(p1_right <= p2_left, "ground pushbox separates overlapping players on landing");
+}
+
+/* ========== COMBO RULE TESTS ========== */
+
+static void test_light_self_chain(void) {
+    printf("test_light_self_chain:\n");
+    PlayerState p1, p2;
+    player_init(&p1, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&p2, 2, 450, GROUND_Y - 80, CHAR_RYKER);
+    InputBuffer buf;
+    input_init(&buf);
+    /* Start 5L and manually set hit_confirmed */
+    const MoveData *jab = character_get_normal(CHAR_RYKER, NORMAL_5L);
+    tick_with_buf(&p1, &buf, INPUT_LIGHT, 1);
+    tick_with_buf(&p1, &buf, 0, PENDING_BUFFER_WAIT);
+    ASSERT(active(&p1)->state == STATE_ATTACK_STARTUP, "5L started");
+    /* Advance through startup + into active */
+    tick_with_buf(&p1, &buf, 0, jab->startup_frames);
+    ASSERT(active(&p1)->state == STATE_ATTACK_ACTIVE, "5L active");
+    /* Simulate hit confirmed */
+    p1.hit_confirmed = 1;
+    /* Press L again — should chain into another 5L */
+    tick_with_buf(&p1, &buf, INPUT_LIGHT, 1);
+    ASSERT(active(&p1)->state == STATE_ATTACK_STARTUP, "5L chained into 5L");
+    ASSERT(p1.current_attack == jab, "still the same jab move");
+}
+
+static void test_all_normals_special_cancel(void) {
+    printf("test_all_normals_special_cancel:\n");
+    /* Engine rule: all normals on hit get at least CANCEL_BY_SPECIAL.
+     * Test with 5H which has no MOVE_PROP_CHAIN — should still special cancel. */
+    PlayerState p;
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    InputBuffer buf;
+    input_init(&buf);
+    const MoveData *heavy = character_get_normal(CHAR_RYKER, NORMAL_5H);
+    /* Start 5H */
+    tick_with_buf(&p, &buf, INPUT_HEAVY, 1);
+    tick_with_buf(&p, &buf, 0, PENDING_BUFFER_WAIT);
+    tick_with_buf(&p, &buf, 0, heavy->startup_frames);
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5H active");
+    p.hit_confirmed = 1;
+    /* Input QCF + L for fireball — should cancel */
+    input_update(&buf, INPUT_DOWN);
+    player_update(&p, INPUT_DOWN, &buf);
+    input_update(&buf, INPUT_DOWN | INPUT_RIGHT);
+    player_update(&p, INPUT_DOWN | INPUT_RIGHT, &buf);
+    input_update(&buf, INPUT_RIGHT | INPUT_LIGHT);
+    player_update(&p, INPUT_RIGHT | INPUT_LIGHT, &buf);
+    /* Should have cancelled into special */
+    ASSERT(p.current_attack != NULL, "attack active after cancel");
+    ASSERT(p.current_attack->move_type == MOVE_TYPE_SPECIAL, "cancelled into special move");
+}
+
+static void test_no_chain_down(void) {
+    printf("test_no_chain_down:\n");
+    PlayerState p;
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    InputBuffer buf;
+    input_init(&buf);
+    const MoveData *med = character_get_normal(CHAR_RYKER, NORMAL_5M);
+    /* Start 5M */
+    tick_with_buf(&p, &buf, INPUT_MEDIUM, 1);
+    tick_with_buf(&p, &buf, 0, PENDING_BUFFER_WAIT);
+    tick_with_buf(&p, &buf, 0, med->startup_frames);
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5M active");
+    p.hit_confirmed = 1;
+    /* Try to chain into 5L — should fail (can't chain down M→L) */
+    tick_with_buf(&p, &buf, INPUT_LIGHT, 1);
+    ASSERT(p.current_attack == med, "5M did NOT chain into 5L (can't chain down)");
+}
+
+static void test_hitstun_covers_chain_startup(void) {
+    printf("test_hitstun_covers_chain_startup:\n");
+    /* Validate the hard rule: hitstun >= next chain's startup + 3 */
+    const MoveData *l5 = character_get_normal(CHAR_RYKER, NORMAL_5L);
+    const MoveData *m5 = character_get_normal(CHAR_RYKER, NORMAL_5M);
+    const MoveData *h5 = character_get_normal(CHAR_RYKER, NORMAL_5H);
+    const MoveData *l2 = character_get_normal(CHAR_RYKER, NORMAL_2L);
+    const MoveData *m2 = character_get_normal(CHAR_RYKER, NORMAL_2M);
+    const MoveData *h2 = character_get_normal(CHAR_RYKER, NORMAL_2H);
+    /* Standing chain: L→L, L→M, M→H */
+    ASSERT(l5->hitstun >= l5->startup_frames + 3, "5L hitstun covers 5L startup+3 (self-chain)");
+    ASSERT(l5->hitstun >= m5->startup_frames + 3, "5L hitstun covers 5M startup+3");
+    ASSERT(m5->hitstun >= h5->startup_frames + 3, "5M hitstun covers 5H startup+3");
+    /* Crouching chain: L→L, L→M, M→H */
+    ASSERT(l2->hitstun >= l2->startup_frames + 3, "2L hitstun covers 2L startup+3 (self-chain)");
+    ASSERT(l2->hitstun >= m2->startup_frames + 3, "2L hitstun covers 2M startup+3");
+    ASSERT(m2->hitstun >= h2->startup_frames + 3, "2M hitstun covers 2H startup+3");
+    /* Cross-series: standing L into crouching M, etc */
+    ASSERT(l5->hitstun >= m2->startup_frames + 3, "5L hitstun covers 2M startup+3");
+    ASSERT(l2->hitstun >= m5->startup_frames + 3, "2L hitstun covers 5M startup+3");
+    /* Total frame limits */
+    ASSERT(l5->total_frames <= 18, "5L total frames <= 18");
+    ASSERT(l2->total_frames <= 18, "2L total frames <= 18");
+    ASSERT(m5->total_frames <= 30, "5M total frames <= 30");
+    ASSERT(m2->total_frames <= 30, "2M total frames <= 30");
+    ASSERT(h5->total_frames <= 42, "5H total frames <= 42");
+    ASSERT(h2->total_frames <= 42, "2H total frames <= 42");
+}
+
+/* ========== HIGH/LOW BLOCKING TESTS ========== */
+
+static void test_block_high_low_system(void) {
+    printf("test_block_high_low_system:\n");
+
+    /* Set up two characters facing each other */
+    CharacterState defender = {0};
+    defender.x = FIXED_FROM_INT(300);
+    defender.width = 50;
+    defender.height = 80;
+
+    CharacterState attacker = {0};
+    attacker.x = FIXED_FROM_INT(200);
+
+    /* Standing block (holding back, no down) */
+    uint32_t stand_block = INPUT_RIGHT;  /* P1 attacker left, defender holds right = back */
+
+    /* Crouching block (holding down-back) */
+    uint32_t crouch_block = INPUT_RIGHT | INPUT_DOWN;
+
+    /* MID — blocked by both stances */
+    ASSERT(is_blocking(&defender, &attacker, stand_block, HIT_TYPE_MID) == 1,
+           "MID blocked by standing block");
+    ASSERT(is_blocking(&defender, &attacker, crouch_block, HIT_TYPE_MID) == 1,
+           "MID blocked by crouching block");
+
+    /* HIGH — blocked by both stances (same as MID) */
+    ASSERT(is_blocking(&defender, &attacker, stand_block, HIT_TYPE_HIGH) == 1,
+           "HIGH blocked by standing block");
+    ASSERT(is_blocking(&defender, &attacker, crouch_block, HIT_TYPE_HIGH) == 1,
+           "HIGH blocked by crouching block");
+
+    /* LOW — only crouching block works */
+    ASSERT(is_blocking(&defender, &attacker, stand_block, HIT_TYPE_LOW) == 0,
+           "LOW beats standing block");
+    ASSERT(is_blocking(&defender, &attacker, crouch_block, HIT_TYPE_LOW) == 1,
+           "LOW blocked by crouching block");
+
+    /* OVERHEAD — only standing block works */
+    ASSERT(is_blocking(&defender, &attacker, stand_block, HIT_TYPE_OVERHEAD) == 1,
+           "OVERHEAD blocked by standing block");
+    ASSERT(is_blocking(&defender, &attacker, crouch_block, HIT_TYPE_OVERHEAD) == 0,
+           "OVERHEAD beats crouching block");
+
+    /* UNBLOCKABLE — nothing blocks it */
+    ASSERT(is_blocking(&defender, &attacker, stand_block, HIT_TYPE_UNBLOCKABLE) == 0,
+           "UNBLOCKABLE ignores standing block");
+    ASSERT(is_blocking(&defender, &attacker, crouch_block, HIT_TYPE_UNBLOCKABLE) == 0,
+           "UNBLOCKABLE ignores crouching block");
+
+    /* Not holding back at all — never blocks */
+    ASSERT(is_blocking(&defender, &attacker, INPUT_DOWN, HIT_TYPE_MID) == 0,
+           "no block without holding back");
+    ASSERT(is_blocking(&defender, &attacker, 0, HIT_TYPE_LOW) == 0,
+           "no block with no input");
+
+    /* Air normals are always OVERHEAD (data label check) */
+    const CharacterDef *ryker = character_get_def(CHAR_RYKER);
+    ASSERT(ryker->normals[6]->hit_type == HIT_TYPE_OVERHEAD, "j.L is OVERHEAD");
+    ASSERT(ryker->normals[7]->hit_type == HIT_TYPE_OVERHEAD, "j.M is OVERHEAD");
+    ASSERT(ryker->normals[8]->hit_type == HIT_TYPE_OVERHEAD, "j.H is OVERHEAD");
+}
+
+/* ========== S BUTTON + SUPER JUMP TESTS ========== */
+
+static void test_5s_launcher(void) {
+    printf("test_5s_launcher:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    /* Press S from ground — should start 5S */
+    commit_attack_from_idle(&p, INPUT_SPECIAL);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "5S enters startup");
+    ASSERT(p.current_attack == character_get_normal(CHAR_RYKER, NORMAL_5S), "resolves to NORMAL_5S");
+    ASSERT(p.current_attack->properties & MOVE_PROP_LAUNCHER, "5S has LAUNCHER property");
+    ASSERT(p.current_attack->properties & MOVE_PROP_SUPER_JUMP_CANCEL, "5S has SUPER_JUMP_CANCEL property");
+}
+
+static void test_js_air(void) {
+    printf("test_js_air:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    /* Jump past jump squat */
+    tick(&p, INPUT_UP, 1);
+    tick(&p, 0, 4);
+    ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne");
+    /* Press S while airborne — should start j.S */
+    tick(&p, INPUT_SPECIAL, 1);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "j.S enters startup");
+    ASSERT(p.current_attack == character_get_normal(CHAR_RYKER, NORMAL_JS), "resolves to NORMAL_JS");
+}
+
+static void test_super_jump_cancel_off_s(void) {
+    printf("test_super_jump_cancel_off_s:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    /* Start 5S */
+    commit_attack_from_idle(&p, INPUT_SPECIAL);
+    /* Tick through remaining startup (10 total, 1 elapsed on commit) */
+    tick(&p, 0, 9);
+    ASSERT(active(&p)->state == STATE_ATTACK_ACTIVE, "5S active");
+    /* Simulate hit confirmed */
+    p.hit_confirmed = 1;
+    /* Press UP — should super jump cancel */
+    tick(&p, INPUT_UP, 1);
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "super jump cancel into jump squat");
+    ASSERT(active(&p)->super_jump == TRUE, "super_jump flag set");
+}
+
+static void test_super_jump_higher(void) {
+    printf("test_super_jump_higher:\n");
+    const CharacterDef *def = character_get_def(CHAR_RYKER);
+    ASSERT(def->super_jump_velocity < def->jump_velocity,
+           "super jump velocity more negative (higher) than normal");
+}
+
+static void test_s_not_in_dash(void) {
+    printf("test_s_not_in_dash:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    /* Press L first to set button_press_frame, then S — should NOT trigger two-button dash */
+    tick(&p, INPUT_LIGHT, 1);
+    /* Wait for pending to expire */
+    tick(&p, 0, 5);
+    /* Now press S next frame */
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    tick(&p, INPUT_LIGHT, 1);
+    tick(&p, INPUT_SPECIAL, 1);
+    /* S should not count as a second button for two-button dash */
+    ASSERT(active(&p)->state != STATE_DASH_FORWARD && active(&p)->state != STATE_DASH_BACKWARD,
+           "S button does not trigger two-button dash");
+}
+
+static void test_28_super_jump_from_neutral(void) {
+    printf("test_28_super_jump_from_neutral:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    /* Hold down for a few frames (enter crouch) */
+    tick(&p, INPUT_DOWN, 3);
+    ASSERT(active(&p)->state == STATE_CROUCH, "crouching after holding down");
+    /* Release down and press up — takes 2 frames:
+     * frame 1: crouch sees no DOWN → exits to idle (prev_input still has DOWN)
+     * frame 2: idle sees UP → enters jump squat, super_jump detected */
+    tick(&p, INPUT_UP, 2);
+    ASSERT(active(&p)->state == STATE_JUMP_SQUAT, "jump squat from 28 input");
+    ASSERT(active(&p)->super_jump == TRUE, "super_jump flag set from 28 input");
+    /* Tick through jump squat */
+    const CharacterDef *def = character_get_def(CHAR_RYKER);
+    tick(&p, 0, def->jump_squat_frames);
+    ASSERT(active(&p)->state == STATE_AIRBORNE, "airborne after super jump squat");
+    ASSERT(active(&p)->vy == def->super_jump_velocity, "uses super jump velocity");
 }
 
 /* ========== MAIN ========== */
@@ -1086,6 +1458,31 @@ int main(void) {
     test_projectile_movement();
     test_projectile_despawn_bounds();
     test_projectile_despawn_on_hit();
+
+    /* Polish fix tests */
+    test_dash_jump_speed_capped();
+    test_air_friction_dash_jump_only();
+    test_projectile_close_range_clamp();
+    test_pushbox_no_over_separation();
+    test_air_allows_crossup();
+    test_landing_resolves_side();
+
+    /* Combo rule tests */
+    test_light_self_chain();
+    test_all_normals_special_cancel();
+    test_no_chain_down();
+    test_hitstun_covers_chain_startup();
+
+    /* High/low blocking tests */
+    test_block_high_low_system();
+
+    /* S button + super jump tests */
+    test_5s_launcher();
+    test_js_air();
+    test_super_jump_cancel_off_s();
+    test_super_jump_higher();
+    test_s_not_in_dash();
+    test_28_super_jump_from_neutral();
 
     printf("\n=== Results: %d/%d passed, %d failed ===\n",
            tests_passed, tests_run, tests_failed);

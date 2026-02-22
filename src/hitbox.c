@@ -29,16 +29,36 @@ int hitbox_check_collision(const Hitbox *hb, const Hurtbox *hurt, int char_x, in
             hb_y + hb->height > hurt->y);
 }
 
-/* Check if defender is blocking (holding back relative to attacker) */
-int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t input) {
-    /* Defender must be holding back (away from attacker) */
-    if (attacker->x < defender->x) {
-        /* Attacker is to the left, defender holds right (away) to block */
-        return INPUT_HAS(input, INPUT_RIGHT) ? 1 : 0;
-    } else {
-        /* Attacker is to the right, defender holds left (away) to block */
-        return INPUT_HAS(input, INPUT_LEFT) ? 1 : 0;
-    }
+/* Check if defender is blocking (accounts for high/low/overhead).
+ * Standard fighting game rules:
+ *   MID / HIGH  — blocked by standing or crouching block
+ *   LOW         — must block crouching (holding down-back)
+ *   OVERHEAD    — must block standing (holding back, NOT down)
+ *   UNBLOCKABLE — never blocked
+ */
+int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t input, int hit_type) {
+    /* Unblockable moves can never be blocked */
+    if (hit_type == HIT_TYPE_UNBLOCKABLE) return 0;
+
+    /* Must be holding back (away from attacker) */
+    int holding_back = 0;
+    if (attacker->x < defender->x)
+        holding_back = INPUT_HAS(input, INPUT_RIGHT);
+    else
+        holding_back = INPUT_HAS(input, INPUT_LEFT);
+    if (!holding_back) return 0;
+
+    /* Determine block stance from input */
+    int crouching = INPUT_HAS(input, INPUT_DOWN);
+
+    /* Low attacks beat standing block */
+    if (hit_type == HIT_TYPE_LOW && !crouching) return 0;
+
+    /* Overheads beat crouching block */
+    if (hit_type == HIT_TYPE_OVERHEAD && crouching) return 0;
+
+    /* MID / HIGH — blocked by either stance */
+    return 1;
 }
 
 void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
@@ -106,14 +126,30 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         /* Note: don't uncrouch — defender stays at current height/position.
          * Crouching flag preserved so hitstun exit returns to crouch. */
 
-        /* Full knockback */
-        defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
-        defender->vy = move->knockback_y;
-
-        /* Apply move properties */
-        if (move->properties & MOVE_PROP_LAUNCHER) {
-            defender->vy = move->knockback_y;  /* Ensure launch velocity */
-            /* TODO: transition to air combo state, super jump cancel window */
+        /* Knockback and airborne handling */
+        if (!defender->on_ground) {
+            /* Already airborne (juggle): slam them down into knockdown.
+             * Preserves horizontal knockback but forces downward velocity. */
+            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vy = FIXED_FROM_INT(8);  /* Fast downward slam */
+            defender->state = STATE_HITSTUN;
+            /* They'll land into knockdown via update_hitstun's landing check */
+        } else if (move->properties & MOVE_PROP_LAUNCHER) {
+            /* Launcher: send opponent airborne */
+            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vy = move->knockback_y;
+            defender->on_ground = FALSE;
+            defender->state = STATE_HITSTUN;
+            /* Uncrouch if crouching so airborne height is correct */
+            if (defender->crouching) {
+                defender->y -= FIXED_FROM_INT(defender->standing_height - defender->crouch_height);
+                defender->height = defender->standing_height;
+                defender->crouching = FALSE;
+            }
+        } else {
+            /* Grounded hit: normal knockback */
+            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vy = move->knockback_y;
         }
         if (move->properties & MOVE_PROP_WALL_BOUNCE) {
             /* Check if wall bounce is available and defender is near wall */

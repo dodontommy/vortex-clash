@@ -100,6 +100,7 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y, int ch
     p->pending_attack = 0;
     p->buffered_button = 0;
     p->buffered_button_frame = -100;
+    p->last_down_frame = -100;
 
     /* Initialize combo state */
     combo_init(&p->combo);
@@ -272,9 +273,21 @@ static void update_crouch(CharacterState *c, uint32_t input) {
 static const struct MoveData *resolve_normal(const PlayerState *p, uint32_t button, uint32_t input) {
     const CharacterState *c = &p->chars[p->active_char];
     int idx;
-    if (!c->on_ground)
+    /* S button: universal launcher (ground) or air exchange (air) */
+    if (button & INPUT_SPECIAL) {
+        idx = c->on_ground ? NORMAL_5S : NORMAL_JS;
+        return character_get_normal(p->character_id, idx);
+    }
+    if (!c->on_ground) {
+        /* Air command normals: j.2+button (dive kicks, etc.)
+         * Falls back to regular air normal if slot is empty. */
+        if (INPUT_HAS(input, INPUT_DOWN)) {
+            idx = (button & INPUT_LIGHT) ? NORMAL_J2L : (button & INPUT_MEDIUM) ? NORMAL_J2M : NORMAL_J2H;
+            const struct MoveData *move = character_get_normal(p->character_id, idx);
+            if (move) return move;
+        }
         idx = (button & INPUT_LIGHT) ? NORMAL_JL : (button & INPUT_MEDIUM) ? NORMAL_JM : NORMAL_JH;
-    else if (INPUT_HAS(input, INPUT_DOWN))
+    } else if (INPUT_HAS(input, INPUT_DOWN))
         idx = (button & INPUT_LIGHT) ? NORMAL_2L : (button & INPUT_MEDIUM) ? NORMAL_2M : NORMAL_2H;
     else
         idx = (button & INPUT_LIGHT) ? NORMAL_5L : (button & INPUT_MEDIUM) ? NORMAL_5M : NORMAL_5H;
@@ -301,12 +314,15 @@ static void update_jump_squat(PlayerState *p, CharacterState *c, uint32_t input,
         c->state_frame = 0;
         set_anim(c, ANIM_JUMP);
         c->on_ground = FALSE;
-        c->vy = def->jump_velocity;
+        c->vy = c->super_jump ? def->super_jump_velocity : def->jump_velocity;
 
-        /* Carry horizontal momentum into air (dash momentum if dashing) */
+        /* Carry horizontal momentum into air (dash momentum if dashing, capped) */
         if (c->dashing) {
-            /* vx already set from dash — keep it */
+            /* Cap dash-jump horizontal speed to prevent insane distance */
+            if (c->vx > DASH_JUMP_MAX_SPEED) c->vx = DASH_JUMP_MAX_SPEED;
+            else if (c->vx < -DASH_JUMP_MAX_SPEED) c->vx = -DASH_JUMP_MAX_SPEED;
             c->dashing = FALSE;
+            c->dash_jump = TRUE;
         } else {
             int dir = get_input_dir(input);
             c->vx = dir * def->walk_speed_forward;
@@ -316,6 +332,11 @@ static void update_jump_squat(PlayerState *p, CharacterState *c, uint32_t input,
 
 static void update_airborne(CharacterState *c, uint32_t input) {
     c->vy += GRAVITY;
+    /* Air friction only on dash jumps — normal jumps preserve full momentum */
+    if (c->dash_jump) {
+        if (c->vx > 0) { c->vx -= AIR_FRICTION; if (c->vx < 0) c->vx = 0; }
+        else if (c->vx < 0) { c->vx += AIR_FRICTION; if (c->vx > 0) c->vx = 0; }
+    }
     c->x += c->vx;
     c->y += c->vy;
 
@@ -331,12 +352,14 @@ static void update_airborne(CharacterState *c, uint32_t input) {
             c->on_ground = FALSE;
             /* Keep some horizontal momentum */
             c->vx = c->vx * 2 / 3;
-            set_anim(c, ANIM_JUMP);  /* Transition to jump anim */
+            set_anim(c, ANIM_JUMP);
         } else {
             /* Normal landing */
             c->y = FIXED_FROM_INT(ground_top);
             c->vy = 0;
             c->on_ground = TRUE;
+            c->dash_jump = FALSE;
+            c->super_jump = FALSE;
             c->state = STATE_LANDING;
             c->state_frame = 0;
             set_anim(c, ANIM_IDLE);
@@ -404,6 +427,11 @@ static void update_dash(CharacterState *c, uint32_t input, const CharacterDef *d
 /* Apply gravity and movement for airborne attack states */
 static void apply_air_physics(CharacterState *c) {
     c->vy += GRAVITY;
+    /* Air friction only on dash jumps — consistent with update_airborne */
+    if (c->dash_jump) {
+        if (c->vx > 0) { c->vx -= AIR_FRICTION; if (c->vx < 0) c->vx = 0; }
+        else if (c->vx < 0) { c->vx += AIR_FRICTION; if (c->vx > 0) c->vx = 0; }
+    }
     c->x += c->vx;
     c->y += c->vy;
     int ground_top = GROUND_Y - c->height;
@@ -411,23 +439,35 @@ static void apply_air_physics(CharacterState *c) {
         c->y = FIXED_FROM_INT(ground_top);
         c->vy = 0;
         c->on_ground = TRUE;
+        c->dash_jump = FALSE;
+        c->super_jump = FALSE;
     }
     clamp_stage_bounds(c);
 }
 
-/* Check if air attack just landed — cancel into landing state */
+/* Check if air attack just landed.
+ * - During STARTUP: cancel the attack (you mistimed it).
+ * - During ACTIVE: keep the attack going — the hitbox persists through landing.
+ *   This is how jump-in attacks work in every fighting game.
+ * - During RECOVERY: cancel into landing state. */
 static int air_attack_landed(PlayerState *p, CharacterState *c) {
-    if (p->attack_from_air && c->on_ground) {
-        c->state = STATE_LANDING;
-        c->state_frame = 0;
-        c->vx = 0;
-        p->current_attack = NULL;
-        p->attack_from_air = FALSE;
-        p->attack_from_crouch = FALSE;
-        set_anim(c, ANIM_IDLE);
-        return 1;
+    if (!p->attack_from_air || !c->on_ground) return 0;
+
+    /* Active frames survive landing — don't cancel */
+    if (c->state == STATE_ATTACK_ACTIVE) {
+        c->dash_jump = FALSE;
+        return 0;
     }
-    return 0;
+
+    /* Startup or recovery: cancel into landing */
+    c->state = STATE_LANDING;
+    c->state_frame = 0;
+    c->vx = 0;
+    p->current_attack = NULL;
+    p->attack_from_air = FALSE;
+    p->attack_from_crouch = FALSE;
+    set_anim(c, ANIM_IDLE);
+    return 1;
 }
 
 static void update_attack_startup(PlayerState *p, CharacterState *c, const struct MoveData *move) {
@@ -453,7 +493,18 @@ static void update_attack_active(PlayerState *p, CharacterState *c, const struct
 
 static void update_attack_recovery(PlayerState *p, CharacterState *c, const struct MoveData *move) {
     if (!c->on_ground) apply_air_physics(c);
-    if (air_attack_landed(p, c)) return;
+    /* Air attack that landed during active frames — now in recovery on ground.
+     * Transition to landing immediately (attack is done, hitbox served its purpose). */
+    if (p->attack_from_air && c->on_ground) {
+        c->state = STATE_LANDING;
+        c->state_frame = 0;
+        c->vx = 0;
+        p->current_attack = NULL;
+        p->attack_from_air = FALSE;
+        p->attack_from_crouch = FALSE;
+        set_anim(c, ANIM_IDLE);
+        return;
+    }
     c->state_frame++;
     if (c->state_frame >= move->recovery_frames) {
         if (!c->on_ground) {
@@ -481,13 +532,39 @@ static void update_attack_recovery(PlayerState *p, CharacterState *c, const stru
 #define HITSTUN_FRICTION FIXED_FROM_INT(1)
 
 static void update_hitstun(CharacterState *c) {
-    c->vy = 0;
     set_anim(c, ANIM_HITSTUN);
 
-    /* Apply decelerating pushback — slides backward, slows to stop */
-    c->x += c->vx;
-    if (c->vx > 0) { c->vx -= HITSTUN_FRICTION; if (c->vx < 0) c->vx = 0; }
-    else if (c->vx < 0) { c->vx += HITSTUN_FRICTION; if (c->vx > 0) c->vx = 0; }
+    if (!c->on_ground) {
+        /* Airborne hitstun (launched): apply gravity, land on ground */
+        c->vy += GRAVITY;
+        c->x += c->vx;
+        c->y += c->vy;
+
+        /* Horizontal friction in air */
+        if (c->vx > 0) { c->vx -= AIR_FRICTION; if (c->vx < 0) c->vx = 0; }
+        else if (c->vx < 0) { c->vx += AIR_FRICTION; if (c->vx > 0) c->vx = 0; }
+
+        int ground_top = GROUND_Y - c->height;
+        if (c->y >= FIXED_FROM_INT(ground_top)) {
+            c->y = FIXED_FROM_INT(ground_top);
+            c->vy = 0;
+            c->on_ground = TRUE;
+            /* Land into knockdown (launched opponents don't just stand up) */
+            c->state = STATE_KNOCKDOWN;
+            c->state_frame = 0;
+            c->in_hitstun = FALSE;
+            c->vx = 0;
+            return;
+        }
+    } else {
+        /* Grounded hitstun: no vertical movement */
+        c->vy = 0;
+
+        /* Apply decelerating pushback — slides backward, slows to stop */
+        c->x += c->vx;
+        if (c->vx > 0) { c->vx -= HITSTUN_FRICTION; if (c->vx < 0) c->vx = 0; }
+        else if (c->vx < 0) { c->vx += HITSTUN_FRICTION; if (c->vx > 0) c->vx = 0; }
+    }
 
     clamp_stage_bounds(c);
 
@@ -495,7 +572,12 @@ static void update_hitstun(CharacterState *c) {
     if (c->state_frame >= c->hitstun_remaining) {
         c->in_hitstun = FALSE;
         c->vx = 0;
-        if (c->crouching) {
+        if (!c->on_ground) {
+            /* Airborne hitstun expired: fall freely until landing */
+            c->state = STATE_AIRBORNE;
+            c->state_frame = 0;
+            set_anim(c, ANIM_JUMP);
+        } else if (c->crouching) {
             c->state = STATE_CROUCH;
             c->state_frame = 0;
             set_anim(c, ANIM_CROUCH);
@@ -555,19 +637,30 @@ static int can_cancel(CancelLevel level, ActionType action) {
     return level != CANCEL_NONE && (int)action >= (int)level;
 }
 
-/* Determine cancel level from current attack's MOVE_PROP flags + hit_confirmed */
+/* Determine cancel level from current attack on hit.
+ *
+ * Engine rule: ALL normals on hit grant at least CANCEL_BY_SPECIAL (special + super).
+ * MOVE_PROP_CHAIN additionally allows normal→normal chains.
+ * Specials only get super cancel if MOVE_PROP_SUPER_CANCEL is set. */
 static CancelLevel cancel_level_from_move(const PlayerState *p) {
     if (!p->hit_confirmed) return CANCEL_NONE;
     const struct MoveData *move = p->current_attack;
     if (!move) return CANCEL_NONE;
-    if (move->properties & MOVE_PROP_CHAIN) return CANCEL_BY_NORMAL;
-    if (move->properties & MOVE_PROP_SPECIAL_CANCEL) return CANCEL_BY_SPECIAL;
+
+    if (move->move_type == MOVE_TYPE_NORMAL) {
+        /* All normals: special cancel on hit is guaranteed by the engine.
+         * CHAIN flag adds normal→normal chains on top. */
+        return (move->properties & MOVE_PROP_CHAIN) ? CANCEL_BY_NORMAL : CANCEL_BY_SPECIAL;
+    }
+
+    /* Specials: only super cancel if flagged */
     if (move->properties & MOVE_PROP_SUPER_CANCEL) return CANCEL_BY_SUPER;
     return CANCEL_NONE;
 }
 
 /* Full cancel validation: category check + chain strength ordering.
- * Chain normals (MOVE_PROP_CHAIN) enforce ascending strength (L->M->H).
+ * Chain normals (MOVE_PROP_CHAIN) enforce ascending strength (L->M->H),
+ * except lights (strength 0) which can self-chain (L->L->L).
  * Specials/supers bypass strength checks entirely. */
 static int can_cancel_into(const PlayerState *p, CancelLevel lvl, const struct MoveData *target) {
     if (!target) return 0;
@@ -577,12 +670,21 @@ static int can_cancel_into(const PlayerState *p, CancelLevel lvl, const struct M
         case MOVE_TYPE_SPECIAL: action = ACTION_SPECIAL; break;
         default:                action = ACTION_NORMAL; break;
     }
+    /* S launcher (MOVE_PROP_LAUNCHER normal) is cancellable-into at special tier.
+     * Any normal on hit grants CANCEL_BY_SPECIAL, so any normal → 5S works. */
+    if (action == ACTION_NORMAL && (target->properties & MOVE_PROP_LAUNCHER))
+        action = ACTION_SPECIAL;
     if (!can_cancel(lvl, action)) return 0;
-    /* Chain ordering: normal->normal via MOVE_PROP_CHAIN requires ascending strength */
+    /* Chain ordering: normal→normal via MOVE_PROP_CHAIN.
+     * Lights (strength 0) can self-chain: L→L→L (pushback is the natural limiter).
+     * Mediums and heavies require strictly ascending strength. */
     if (action == ACTION_NORMAL && p->current_attack
         && (p->current_attack->properties & MOVE_PROP_CHAIN)) {
-        if (target->strength <= p->current_attack->strength)
-            return 0;
+        if (target->strength < p->current_attack->strength)
+            return 0;  /* Can't chain down (H→M, M→L) */
+        if (target->strength == p->current_attack->strength
+            && p->current_attack->strength > 0)
+            return 0;  /* Same strength blocked for M/H (no M→M, H→H) */
     }
     return 1;
 }
@@ -609,6 +711,16 @@ static CancelLevel player_get_cancel_level(const PlayerState *p) {
         default:
             return CANCEL_NONE;
     }
+}
+
+/* Check if the current character state satisfies a move's stance requirement.
+ * stance==0 (STANCE_ANY) always passes. Otherwise all set bits must match. */
+static int stance_ok(const CharacterState *c, int stance) {
+    if (stance == STANCE_ANY) return 1;
+    if ((stance & STANCE_GROUNDED) && !c->on_ground) return 0;
+    if ((stance & STANCE_AIRBORNE) && c->on_ground) return 0;
+    if ((stance & STANCE_STANDING) && c->crouching) return 0;
+    return 1;
 }
 
 /* Start a new attack — replaces the 4 duplicated attack-start blocks */
@@ -648,6 +760,9 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
     if (pressed & INPUT_MEDIUM) p->button_press_frame[1] = p->frame_counter;
     if (pressed & INPUT_HEAVY) p->button_press_frame[2] = p->frame_counter;
 
+    /* Track last frame DOWN was held (for 28 super jump) */
+    if (INPUT_HAS(input, INPUT_DOWN)) p->last_down_frame = p->frame_counter;
+
     CancelLevel lvl = player_get_cancel_level(p);
     int action_taken = 0;
 
@@ -671,7 +786,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         } else if (motion_override || p->frame_counter - p->pending_attack_frame >= TWO_BUTTON_DASH_LENIENCY) {
             /* Use stored direction from press time, not current live input */
             uint32_t resolve_input = p->pending_attack_dir
-                | (input & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_ASSIST));
+                | (input & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL));
             const struct MoveData *move = resolve_normal(p, p->pending_attack, resolve_input);
             if (move) {
                 start_attack_move(p, move);
@@ -714,7 +829,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         MotionType motion = input_detect_motion(input_buf, c->facing);
         if (motion != MOTION_NONE) {
             const MoveData *super = character_get_super(p->character_id, 1);
-            if (super && p->meter >= super->meter_cost) {
+            if (super && p->meter >= super->meter_cost && stance_ok(c, super->stance)) {
                 p->meter -= super->meter_cost;
                 start_attack_move(p, super);
                 action_taken = 1;
@@ -731,7 +846,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         if (motion != MOTION_NONE) {
             const MoveData *special = character_get_special(p->character_id, motion,
                 pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY));
-            if (special) {
+            if (special && stance_ok(c, special->stance)) {
                 start_attack_move(p, special);
                 action_taken = 1;
             }
@@ -748,16 +863,25 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         action_taken = 1;
     }
     /* 4. Single normal attack (newly pressed) */
-    if (!action_taken && (pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY))
+    if (!action_taken && (pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL))
              && can_cancel(lvl, ACTION_NORMAL)) {
-        if (lvl == CANCEL_FREE) {
-            /* From idle/walk/crouch: buffer to allow late two-button dash */
-            p->pending_attack = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY);
+        /* Pending buffer only exists to disambiguate single press vs two-button dash.
+         * Only delay when two-button dash is actually possible (grounded neutral). */
+        int can_two_button_dash = (lvl == CANCEL_FREE && c->on_ground);
+        if (can_two_button_dash) {
+            p->pending_attack = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
             p->pending_attack_frame = p->frame_counter;
             p->pending_attack_dir = input & (INPUT_UP | INPUT_DOWN | INPUT_LEFT | INPUT_RIGHT);
+        } else if (lvl == CANCEL_FREE) {
+            /* No dash possible (airborne, etc.) — commit immediately */
+            uint32_t atk_btn = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
+            const struct MoveData *move = resolve_normal(p, atk_btn, input);
+            if (move) {
+                start_attack_move(p, move);
+            }
         } else {
             /* From other cancelable states (on-hit): commit immediately */
-            uint32_t atk_btn = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY);
+            uint32_t atk_btn = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
             const struct MoveData *move = resolve_normal(p, atk_btn, input);
             if (move && can_cancel_into(p, lvl, move)) {
                 start_attack_move(p, move);
@@ -776,6 +900,25 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         }
         c->state = STATE_JUMP_SQUAT;
         c->state_frame = 0;
+        c->super_jump = FALSE;
+        set_anim(c, ANIM_JUMP);
+        p->current_attack = NULL;
+        p->hit_confirmed = 0;
+        p->attack_from_crouch = FALSE;
+        action_taken = 1;
+    }
+    /* 5b. Super jump cancel: MOVE_PROP_SUPER_JUMP_CANCEL + hit_confirmed + UP */
+    if (!action_taken && INPUT_HAS(input, INPUT_UP)
+             && p->hit_confirmed && p->current_attack
+             && (p->current_attack->properties & MOVE_PROP_SUPER_JUMP_CANCEL)
+             && (c->state == STATE_ATTACK_ACTIVE || c->state == STATE_ATTACK_RECOVERY)
+             && c->on_ground) {
+        if (p->attack_from_crouch) {
+            uncrouch(c);
+        }
+        c->state = STATE_JUMP_SQUAT;
+        c->state_frame = 0;
+        c->super_jump = TRUE;
         set_anim(c, ANIM_JUMP);
         p->current_attack = NULL;
         p->hit_confirmed = 0;
@@ -799,13 +942,14 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
     } /* end cancel priority chain */
 
     /* --- Store failed press in combo buffer --- */
-    if (!action_taken && (pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY))) {
-        p->buffered_button = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY);
+    if (!action_taken && (pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL))) {
+        p->buffered_button = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
         p->buffered_button_frame = p->frame_counter;
     }
 
     /* --- State frame updates --- */
     const CharacterDef *def = get_char_def(p);
+    CharacterStateEnum pre_state = c->state;
     switch (c->state) {
         case STATE_IDLE: update_idle(c, input, def); break;
         case STATE_WALK_FORWARD: update_walk(c, input, def, 1); break;
@@ -831,17 +975,30 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
         default: break;
     }
 
+    /* Super jump from neutral: down→up (28 input) triggers super jump.
+     * In MvC3, pressing down then up does a super jump. Detected when
+     * entering JUMP_SQUAT and DOWN was held within the last few frames. */
+    #define SUPER_JUMP_DOWN_WINDOW 4
+    if (c->state == STATE_JUMP_SQUAT && c->state_frame == 0
+        && pre_state != STATE_JUMP_SQUAT
+        && !c->super_jump
+        && (p->frame_counter - p->last_down_frame) <= SUPER_JUMP_DOWN_WINDOW) {
+        c->super_jump = TRUE;
+    }
+
     p->prev_input = input;
 }
 
 /* Can this character auto-turn to face the opponent?
- * Grounded neutral states only — airborne locks facing for crossup setups */
+ * Grounded neutral states + landing — airborne and attack states lock facing.
+ * LANDING auto-faces so that buffered attacks after crossups go the right way. */
 static int can_auto_face(const CharacterState *c) {
     switch (c->state) {
         case STATE_IDLE:
         case STATE_WALK_FORWARD:
         case STATE_WALK_BACKWARD:
         case STATE_CROUCH:
+        case STATE_LANDING:
             return 1;
         default:
             return 0;
@@ -864,10 +1021,11 @@ void player_resolve_collisions(PlayerState *p1, PlayerState *p2) {
     CharacterState *c1 = &p1->chars[p1->active_char];
     CharacterState *c2 = &p2->chars[p2->active_char];
 
-    /* No pushbox collision if either player is airborne — allows crossups */
+    /* No pushbox while either player is airborne — allows crossups and jump-overs.
+     * On landing, the normal ground pushbox resolves which side you end up on. */
     if (!c1->on_ground || !c2->on_ground) return;
 
-    /* Simple AABB collision */
+    /* Ground-to-ground pushbox: simple AABB collision */
     int c1_left = FIXED_TO_INT(c1->x);
     int c1_right = c1_left + c1->width;
     int c2_left = FIXED_TO_INT(c2->x);
@@ -878,10 +1036,9 @@ void player_resolve_collisions(PlayerState *p1, PlayerState *p2) {
         /* Push them apart */
         int overlap = (c1_right - c2_left < c2_right - c1_left) ?
                       (c1_right - c2_left) : (c2_right - c1_left);
-        int push = overlap / 2 + 1;  /* +1 to ensure separation */
+        int push = (overlap + 1) / 2;  /* ceiling division — just enough to separate */
 
         if (c1->x < c2->x) {
-            /* P1 is on left, push left */
             c1->x -= FIXED_FROM_INT(push);
             c2->x += FIXED_FROM_INT(push);
         } else {

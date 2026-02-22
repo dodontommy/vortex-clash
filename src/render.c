@@ -1,4 +1,5 @@
 #include "render.h"
+#include "input.h"
 #include <raylib.h>
 #include <stdio.h>
 
@@ -58,25 +59,55 @@ void render_combo_counter(int hits, int damage, int x, int y, unsigned char alph
     DrawText(buf, x, y + 45, 16, white);
 }
 
-void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset) {
+void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset,
+                          int remap_open, int remap_cursor, int remap_listening,
+                          const void *bindings_ptr) {
+    const InputBindings *bindings = (const InputBindings *)bindings_ptr;
     static const char *block_names[] = { "None", "All", "After 1st", "Crouch", "Stand" };
     static const char *state_names[] = { "Stand", "Crouch", "Jump" };
-    static const char *labels[] = { "Block", "State", "Counter Hit", "HP Reset", "Exit Game" };
+    static const char *labels[] = { "Block", "State", "Counter Hit", "HP Reset", "Controls", "Exit Game" };
+    static const char *btn_labels[] = { "Light", "Medium", "Heavy", "Special" };
 
     int px = SCREEN_WIDTH - 350;
     int py = 80;
     int pw = 330;
-    int ph = 260;
+    int ph = 300;
 
     /* Semi-transparent dark panel */
     DrawRectangle(px, py, pw, ph, (Color){ 20, 20, 30, 200 });
     DrawRectangleLines(px, py, pw, ph, (Color){ 100, 100, 140, 255 });
 
+    if (remap_open) {
+        /* Remap sub-menu */
+        DrawText("CONTROLS (P1)", px + 70, py + 10, 20, (Color){ 255, 215, 0, 255 });
+
+        for (int i = 0; i < REMAP_BUTTON_COUNT; i++) {
+            int ry = py + 50 + i * 42;
+            Color row_color = (i == remap_cursor) ? (Color){ 255, 255, 0, 255 } : (Color){ 200, 200, 200, 255 };
+
+            DrawText(btn_labels[i], px + 20, ry, 18, row_color);
+
+            if (remap_listening && i == remap_cursor) {
+                DrawText("Press key...", px + 140, ry, 18, (Color){ 255, 100, 100, 255 });
+            } else if (bindings) {
+                char bind_buf[48];
+                const char *kname = input_key_name(bindings->buttons[i].keyboard_key);
+                const char *gname = bindings->buttons[i].gamepad_button >= 0
+                    ? input_gamepad_button_name(bindings->buttons[i].gamepad_button) : "-";
+                snprintf(bind_buf, sizeof(bind_buf), "Key:%s  Pad:%s", kname, gname);
+                DrawText(bind_buf, px + 140, ry, 16, row_color);
+            }
+        }
+
+        DrawText("A/Enter:Rebind  B/Esc:Back", px + 30, py + ph - 25, 12, (Color){ 150, 150, 150, 255 });
+        return;
+    }
+
     /* Title */
     DrawText("TRAINING MODE", px + 80, py + 10, 20, (Color){ 255, 215, 0, 255 });
 
     /* Menu rows */
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         int ry = py + 45 + i * 38;
         Color row_color = (i == cursor) ? (Color){ 255, 255, 0, 255 } : (Color){ 200, 200, 200, 255 };
 

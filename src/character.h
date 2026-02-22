@@ -49,6 +49,7 @@ typedef enum {
 #define MOVE_PROP_HARD_KD        (1 << 11) /* Causes hard knockdown */
 #define MOVE_PROP_PROJECTILE     (1 << 12) /* Is a projectile */
 #define MOVE_PROP_LOW            (1 << 13) /* Low hit (crouching) */
+#define MOVE_PROP_SUPER_JUMP_CANCEL (1 << 14) /* Super jump cancel on hit (S launcher) */
 
 /* Per-frame move data */
 typedef struct {
@@ -58,6 +59,13 @@ typedef struct {
     int cancellable;           /* What cancels are available this frame */
     int flags;                 /* Properties like INVINCIBLE */
 } MoveFrame;
+
+/* Stance requirements (bitmask) — where a move can be used.
+ * 0 means no restriction (usable anywhere, default for normals). */
+#define STANCE_GROUNDED  (1 << 0)  /* Must be on the ground */
+#define STANCE_AIRBORNE  (1 << 1)  /* Must be in the air */
+#define STANCE_STANDING  (1 << 2)  /* Must be standing (not crouching) */
+#define STANCE_ANY       0         /* No restriction */
 
 /* Normal index constants */
 #define NORMAL_5L  0
@@ -69,6 +77,11 @@ typedef struct {
 #define NORMAL_JL  6
 #define NORMAL_JM  7
 #define NORMAL_JH  8
+#define NORMAL_J2L 9   /* Air command normals: j.2+button (dive kicks, etc.) */
+#define NORMAL_J2M 10
+#define NORMAL_J2H 11
+#define NORMAL_5S  12  /* Standing S (universal launcher) */
+#define NORMAL_JS  13  /* Air S (air exchange / spikedown) */
 
 /* Complete move definition */
 typedef struct MoveData {
@@ -99,6 +112,7 @@ typedef struct MoveData {
     
     /* Properties */
     int properties;
+    int stance;             /* STANCE_* bitmask: where this move can be used (0 = anywhere) */
     int strength;           /* 0=Light, 1=Medium, 2=Heavy (for chain ordering) */
     int meter_cost;
     int meter_gain;
@@ -117,6 +131,7 @@ typedef struct {
     fixed_t jump_velocity;
     fixed_t dash_speed;
     fixed_t air_dash_speed;
+    fixed_t super_jump_velocity;
     
     /* Health */
     int max_hp;

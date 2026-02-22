@@ -13,7 +13,9 @@ void render_shutdown(void);
 
 /* Combo counter + training menu */
 void render_combo_counter(int hits, int damage, int x, int y, unsigned char alpha);
-void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset);
+void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset,
+                          int remap_open, int remap_cursor, int remap_listening,
+                          const void *bindings);
 
 /* Debug visualization */
 void render_debug_hitbox(int x, int y, int w, int h);

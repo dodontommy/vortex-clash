@@ -11,7 +11,7 @@
 #define INPUT_LIGHT  (1 << 4)
 #define INPUT_MEDIUM (1 << 5)
 #define INPUT_HEAVY  (1 << 6)
-#define INPUT_ASSIST (1 << 7)
+#define INPUT_SPECIAL (1 << 7)
 
 /* Composite inputs */
 #define INPUT_THROWN (INPUT_LIGHT | INPUT_MEDIUM)  /* L+M = throw */
@@ -65,6 +65,31 @@ typedef enum {
 
 /* Poll input from keyboard and/or gamepad for a player */
 uint32_t input_poll(int player_id, InputSource source);
+
+/* Key/gamepad remapping */
+#define REMAP_BUTTON_COUNT 4  /* L, M, H, S */
+typedef struct {
+    int keyboard_key;    /* Raylib KEY_* constant */
+    int gamepad_button;  /* Raylib GAMEPAD_BUTTON_* constant, -1 = unbound */
+} ButtonBinding;
+
+typedef struct {
+    ButtonBinding buttons[REMAP_BUTTON_COUNT]; /* 0=L, 1=M, 2=H, 3=S */
+} InputBindings;
+
+/* Initialize bindings to default keys for player_id (1 or 2) */
+void input_bindings_init(InputBindings *b, int player_id);
+
+/* Poll input using custom bindings (directions hardcoded, buttons from bindings) */
+uint32_t input_poll_bound(int player_id, InputSource source, const InputBindings *b);
+
+/* Human-readable key/button names for the remap menu */
+const char *input_key_name(int key);
+const char *input_gamepad_button_name(int button);
+
+/* Scan for newly pressed key/gamepad button (for remapping). Returns -1 if none. */
+int input_scan_key(void);
+int input_scan_gamepad(int gamepad);
 
 /* Helper macro */
 #define INPUT_HAS(in, bit) (((in) & (bit)) != 0)

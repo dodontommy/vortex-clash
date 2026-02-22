@@ -28,11 +28,16 @@ typedef enum {
 typedef struct {
     bool_t active;
     bool_t menu_open;
-    int cursor;               /* 0-3 */
+    int cursor;               /* 0-5: Block, State, Counter Hit, HP Reset, Controls, Exit Game */
     DummyBlockMode block_mode;
     DummyStateMode dummy_state;
     bool_t counter_hit;
     bool_t hp_meter_reset;
+    /* Key remap sub-menu */
+    bool_t remap_open;        /* TRUE when remap sub-menu is visible */
+    int remap_cursor;         /* 0-3: L, M, H, S */
+    bool_t remap_listening;   /* TRUE when waiting for key/button press */
+    int remap_target;         /* Which player's bindings to edit (0 = P1) */
 } TrainingState;
 
 /* Camera zoom limits */
@@ -61,6 +66,7 @@ typedef struct {
     int frame_count;
 
     /* --- Render-only state (local) --- */
+    InputBindings bindings[2];  /* key/gamepad bindings for P1 and P2 */
     SpriteSet sprites[2];  /* sprite sets for P1 and P2 */
     Camera2D camera;
     bool_t running;

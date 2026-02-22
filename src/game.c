@@ -41,7 +41,7 @@ static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState
     /* Projectile moves: spawn a projectile entity instead of melee hit */
     if (move->properties & MOVE_PROP_PROJECTILE) {
         int owner = attacker->player_id - 1;
-        projectile_spawn(&game->projectiles, owner, attacker, move);
+        projectile_spawn(&game->projectiles, owner, attacker, move, d);
         attacker->opponent_hits[opp_idx] = attacker->attack_hit_id;
         return;
     }
@@ -61,8 +61,8 @@ static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState
 
     /* Check collision */
     if (hitbox_check_collision(&hb, &hurt, FIXED_TO_INT(a->x), FIXED_TO_INT(a->y), a->facing)) {
-        /* Check if blocking */
-        int blocking = is_blocking(d, a, defender_input);
+        /* Check if blocking — hit_type comes from move data, no overrides */
+        int blocking = is_blocking(d, a, defender_input, move->hit_type);
 
         /* Apply hit with combo tracking */
         int saved_hits = attacker->combo.hit_count;
@@ -178,8 +178,8 @@ static void check_projectile_hits(GameState *game) {
             fake_attacker.x = proj->x;
             fake_attacker.y = proj->y;
 
-            /* Check block using defender's prev_input */
-            int blocking = is_blocking(d, &fake_attacker, defender->prev_input);
+            /* Check block using defender's prev_input — projectiles use their hit_type */
+            int blocking = is_blocking(d, &fake_attacker, defender->prev_input, proj->hit_type);
 
             /* Resolve hit */
             PlayerState *attacker_p = &game->players[proj->owner];
@@ -225,6 +225,8 @@ void game_init(GameState *game) {
     game->debug_draw = FALSE;
     memset(game->combo_display, 0, sizeof(game->combo_display));
     memset(&game->training, 0, sizeof(TrainingState));
+    input_bindings_init(&game->bindings[0], 1);
+    input_bindings_init(&game->bindings[1], 2);
     camera_init(game);
     render_init();
     hitbox_init();
@@ -248,6 +250,28 @@ void game_update(GameState *game) {
 
     /* Training menu navigation (pauses game) */
     if (game->training.menu_open) {
+        /* Remap sub-menu: listening for key/button press */
+        if (game->training.remap_open && game->training.remap_listening) {
+            int new_key = input_scan_key();
+            if (new_key >= 0) {
+                game->bindings[game->training.remap_target].buttons[game->training.remap_cursor].keyboard_key = new_key;
+                game->training.remap_listening = FALSE;
+            }
+            int gp = game->training.remap_target;
+            int new_btn = input_scan_gamepad(gp);
+            if (new_btn >= 0) {
+                game->bindings[game->training.remap_target].buttons[game->training.remap_cursor].gamepad_button = new_btn;
+                game->training.remap_listening = FALSE;
+            }
+            /* Escape/B cancels listening */
+            if (IsKeyPressed(KEY_ESCAPE) ||
+                (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))) {
+                game->training.remap_listening = FALSE;
+            }
+            update_combo_display(game);
+            return;
+        }
+
         int nav_up = IsKeyPressed(KEY_UP) ||
                      (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP));
         int nav_down = IsKeyPressed(KEY_DOWN) ||
@@ -258,9 +282,26 @@ void game_update(GameState *game) {
                         (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT));
         int nav_confirm = IsKeyPressed(KEY_ENTER) ||
                           (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+        int nav_back = IsKeyPressed(KEY_ESCAPE) ||
+                       (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT));
 
-        if (nav_up)   game->training.cursor = (game->training.cursor + 4) % 5;
-        if (nav_down)  game->training.cursor = (game->training.cursor + 1) % 5;
+        /* Remap sub-menu navigation */
+        if (game->training.remap_open) {
+            if (nav_up)   game->training.remap_cursor = (game->training.remap_cursor + REMAP_BUTTON_COUNT - 1) % REMAP_BUTTON_COUNT;
+            if (nav_down) game->training.remap_cursor = (game->training.remap_cursor + 1) % REMAP_BUTTON_COUNT;
+            if (nav_confirm) {
+                game->training.remap_listening = TRUE;
+            }
+            if (nav_back) {
+                game->training.remap_open = FALSE;
+            }
+            update_combo_display(game);
+            return;
+        }
+
+        /* Main training menu: 6 items */
+        if (nav_up)   game->training.cursor = (game->training.cursor + 5) % 6;
+        if (nav_down)  game->training.cursor = (game->training.cursor + 1) % 6;
         if (nav_left || nav_right) {
             int dir = nav_right ? 1 : -1;
             switch (game->training.cursor) {
@@ -270,13 +311,20 @@ void game_update(GameState *game) {
                 case 3: game->training.hp_meter_reset = !game->training.hp_meter_reset; break;
             }
         }
-        /* Confirm: Exit Game or close menu */
+        /* Confirm actions */
         if (nav_confirm) {
             if (game->training.cursor == 4) {
+                /* Controls: open remap sub-menu for P1 */
+                game->training.remap_open = TRUE;
+                game->training.remap_cursor = 0;
+                game->training.remap_listening = FALSE;
+                game->training.remap_target = 0;
+            } else if (game->training.cursor == 5) {
                 game->running = FALSE;
                 return;
+            } else {
+                game->training.menu_open = FALSE;
             }
-            game->training.menu_open = FALSE;
         }
         update_combo_display(game);
         return; /* Game paused while menu is open */
@@ -294,8 +342,9 @@ void game_update(GameState *game) {
         return;  /* Skip update during hitstop */
 
     /* Poll inputs — P1 uses keyboard + gamepad 0 */
-    uint32_t p1_raw = input_poll(1, INPUT_SOURCE_KEYBOARD) | input_poll(1, INPUT_SOURCE_GAMEPAD);
-    uint32_t p2_raw = input_poll(2, INPUT_SOURCE_GAMEPAD);
+    uint32_t p1_raw = input_poll_bound(1, INPUT_SOURCE_KEYBOARD, &game->bindings[0])
+                     | input_poll_bound(1, INPUT_SOURCE_GAMEPAD, &game->bindings[0]);
+    uint32_t p2_raw = input_poll_bound(2, INPUT_SOURCE_GAMEPAD, &game->bindings[1]);
 
     /* Training mode: override P2 (dummy) input */
     if (game->training.active) {
@@ -312,12 +361,16 @@ void game_update(GameState *game) {
     input_update(&game->inputs[0], p1_raw);
     input_update(&game->inputs[1], p2_raw);
 
+    /* Update facing FIRST — so inputs and attacks are processed with correct facing.
+     * This must happen before player_update so that buffered attacks after crossups
+     * fire in the right direction. */
+    player_update_facing(&game->players[0], &game->players[1]);
+
     /* Use buffered input for players */
     player_update(&game->players[0], input_get_current(&game->inputs[0]), &game->inputs[0]);
     player_update(&game->players[1], input_get_current(&game->inputs[1]), &game->inputs[1]);
     update_player_anim(&game->sprites[0], &game->players[0]);
     update_player_anim(&game->sprites[1], &game->players[1]);
-    player_update_facing(&game->players[0], &game->players[1]);
     player_resolve_collisions(&game->players[0], &game->players[1]);
 
     /* Reset attacker combo when defender leaves hitstun (returns to neutral) */
@@ -539,7 +592,10 @@ void game_render(const GameState *game) {
     if (game->training.menu_open) {
         render_training_menu(game->training.cursor, game->training.block_mode,
                              game->training.dummy_state, game->training.counter_hit,
-                             game->training.hp_meter_reset);
+                             game->training.hp_meter_reset,
+                             game->training.remap_open, game->training.remap_cursor,
+                             game->training.remap_listening,
+                             &game->bindings[game->training.remap_target]);
     }
 }
 

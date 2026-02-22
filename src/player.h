@@ -56,6 +56,8 @@ typedef struct {
     int facing;             /* -1 = left, 1 = right */
     bool_t on_ground;
     bool_t dashing;
+    bool_t dash_jump;       /* TRUE if current air state originated from a dash jump */
+    bool_t super_jump;      /* TRUE if current jump is a super jump (from S launcher cancel) */
     bool_t crouching;
     bool_t in_hitstun;
     bool_t in_blockstun;
@@ -100,6 +102,7 @@ typedef struct {
     bool_t attack_from_crouch; /* Attack started from crouching */
     bool_t attack_from_air;    /* Attack started from airborne */
     int button_press_frame[3]; /* Last frame L/M/H was pressed (for two-button dash leniency) */
+    int last_down_frame;       /* Last frame DOWN was held (for 28 super jump detection) */
     uint32_t pending_attack;       /* Buffered attack button from idle (0 = none) */
     int pending_attack_frame;      /* Frame when buffered */
     uint32_t pending_attack_dir;   /* Directional input at press time (for correct stand/crouch resolution) */
