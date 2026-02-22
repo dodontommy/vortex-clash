@@ -39,7 +39,7 @@ typedef struct {
 
 /* Functions */
 void projectile_init(ProjectileState *ps);
-int  projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const MoveData *move);
+int  projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const MoveData *move, const CharacterState *defender);
 void projectile_update(ProjectileState *ps);
 
 #endif /* PROJECTILE_H */

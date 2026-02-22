@@ -64,6 +64,8 @@ typedef struct {
     ProjectileState projectiles;
     int hitstop_frames;
     int frame_count;
+    int ko_winner;          /* -1 = none, 0 = P1 wins, 1 = P2 wins */
+    int ko_timer;           /* Freeze countdown after KO */
 
     /* --- Render-only state (local) --- */
     InputBindings bindings[2];  /* key/gamepad bindings for P1 and P2 */
@@ -79,6 +81,8 @@ typedef struct {
     ComboDisplayState combo_display[2];
     TrainingState training;
 } GameState;
+
+#define KO_FREEZE_FRAMES 120
 
 /* Game functions */
 void game_init(GameState *game);

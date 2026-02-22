@@ -619,14 +619,13 @@ static void update_knockdown(CharacterState *c) {
     clamp_stage_bounds(c);
 
     c->state_frame++;
-    /* TODO: OTG window check here (combo_can_otg) */
     if (c->state_frame >= KNOCKDOWN_FRAMES) {
         c->state = STATE_IDLE;
         c->state_frame = 0;
         c->in_hitstun = FALSE;
         c->vx = 0;
         set_anim(c, ANIM_IDLE);
-        /* TODO: wakeup invincibility frames */
+        c->wakeup_timer = WAKEUP_FRAMES;
     }
 }
 
@@ -749,7 +748,7 @@ static void start_attack_move(PlayerState *p, const struct MoveData *move) {
     }
 }
 
-void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf) {
+void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf, fixed_t opponent_x) {
     CharacterState *c = &p->chars[p->active_char];
     p->frame_counter++;
 
@@ -762,6 +761,9 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
 
     /* Track last frame DOWN was held (for 28 super jump) */
     if (INPUT_HAS(input, INPUT_DOWN)) p->last_down_frame = p->frame_counter;
+
+    /* Tick wakeup invincibility */
+    if (c->wakeup_timer > 0) c->wakeup_timer--;
 
     CancelLevel lvl = player_get_cancel_level(p);
     int action_taken = 0;
@@ -833,6 +835,25 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf)
                 p->meter -= super->meter_cost;
                 start_attack_move(p, super);
                 action_taken = 1;
+            }
+        }
+    }
+
+    /* 1b. Throw: L+M pressed together, no motion, grounded, close range */
+    if (!action_taken
+        && (pressed & INPUT_THROWN) == INPUT_THROWN
+        && lvl == CANCEL_FREE
+        && c->on_ground) {
+        MotionType throw_motion = input_buf ? input_detect_motion(input_buf, c->facing) : MOTION_NONE;
+        if (throw_motion == MOTION_NONE) {
+            const MoveData *throw_mv = character_get_throw(p->character_id);
+            if (throw_mv) {
+                fixed_t dist = c->x - opponent_x;
+                if (dist < 0) dist = -dist;
+                if (dist <= FIXED_FROM_INT(THROW_RANGE)) {
+                    start_attack_move(p, throw_mv);
+                    action_taken = 1;
+                }
             }
         }
     }

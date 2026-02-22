@@ -46,6 +46,29 @@ void render_frame_counter(int frame) {
     DrawText(buffer, 10, 10, 20, (Color){200, 200, 200, 255});
 }
 
+void render_meter_bar(int meter, int max_meter, int x, int y) {
+    int bar_width = 200;
+    int bar_height = 16;
+    int fill = (int)((long long)meter * bar_width / max_meter);
+    if (fill < 0) fill = 0;
+    if (fill > bar_width) fill = bar_width;
+
+    /* Background (dark) */
+    DrawRectangle(x, y, bar_width, bar_height, (Color){30, 30, 50, 255});
+    /* Fill (blue) */
+    DrawRectangle(x, y, fill, bar_height, (Color){60, 120, 255, 255});
+    /* Border */
+    DrawRectangleLines(x, y, bar_width, bar_height, (Color){180, 180, 200, 255});
+}
+
+void render_ko_text(void) {
+    const char *text = "K.O.!";
+    int font_size = 80;
+    int text_width = MeasureText(text, font_size);
+    DrawText(text, SCREEN_WIDTH / 2 - text_width / 2, SCREEN_HEIGHT / 2 - 40,
+             font_size, (Color){255, 50, 50, 255});
+}
+
 void render_combo_counter(int hits, int damage, int x, int y, unsigned char alpha) {
     char buf[16];
     /* Large gold hit count */

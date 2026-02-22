@@ -11,6 +11,12 @@ void render_stage_ground(void);
 void render_frame_counter(int frame);
 void render_shutdown(void);
 
+/* Meter bar */
+void render_meter_bar(int meter, int max_meter, int x, int y);
+
+/* KO text */
+void render_ko_text(void);
+
 /* Combo counter + training menu */
 void render_combo_counter(int hits, int damage, int x, int y, unsigned char alpha);
 void render_training_menu(int cursor, int block_mode, int dummy_state, int counter_hit, int hp_reset,

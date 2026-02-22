@@ -7,7 +7,7 @@ void projectile_init(ProjectileState *ps) {
     memset(ps, 0, sizeof(*ps));
 }
 
-int projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const MoveData *move) {
+int projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const MoveData *move, const CharacterState *defender) {
     /* One projectile per player — check if owner already has one active */
     for (int i = 0; i < MAX_PROJECTILES; i++) {
         if (ps->projectiles[i].active && ps->projectiles[i].owner == owner)
@@ -35,6 +35,20 @@ int projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const
     int x_off = c->facing == 1 ? move->x_offset : -move->x_offset - move->width;
     proj->x = c->x + FIXED_FROM_INT(x_off);
     proj->y = c->y + FIXED_FROM_INT(move->y_offset);
+
+    /* Clamp: don't spawn past the defender (prevents fireball going through at close range).
+     * Place projectile so its leading edge touches the defender's front edge. */
+    if (defender) {
+        if (c->facing == 1) {
+            /* Facing right: projectile right edge shouldn't pass defender's left edge */
+            fixed_t max_x = defender->x - FIXED_FROM_INT(move->width);
+            if (proj->x > max_x) proj->x = max_x;
+        } else {
+            /* Facing left: projectile left edge shouldn't pass defender's right edge */
+            fixed_t min_x = defender->x + FIXED_FROM_INT(defender->width);
+            if (proj->x < min_x) proj->x = min_x;
+        }
+    }
 
     /* Velocity based on strength */
     fixed_t speed;

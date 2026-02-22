@@ -165,6 +165,7 @@ const CharacterDef *character_get_def(CharacterId id);
 const MoveData *character_get_normal(CharacterId id, int input);
 const MoveData *character_get_special(CharacterId id, int motion, int button);
 const MoveData *character_get_super(CharacterId id, int level);
+const MoveData *character_get_throw(CharacterId id);
 
 /* Helper macros for creating moves */
 #define MOVE(n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props) \

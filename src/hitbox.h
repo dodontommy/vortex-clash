@@ -38,7 +38,7 @@ void hitbox_apply_hitstop(int *hitstop, int frames);
 void hitbox_update_hitstop(int *hitstop);
 int hitbox_in_hitstop(const int *hitstop);
 
-/* Check if defender is blocking */
-int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t input);
+/* Check if defender is blocking (accounts for high/low/overhead) */
+int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t input, int hit_type);
 
 #endif /* HITBOX_H */

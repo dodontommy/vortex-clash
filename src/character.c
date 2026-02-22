@@ -50,3 +50,9 @@ const MoveData *character_get_super(CharacterId id, int level) {
     }
     return NULL;
 }
+
+const MoveData *character_get_throw(CharacterId id) {
+    const CharacterDef *c = character_get_def(id);
+    if (!c) return NULL;
+    return c->throw_move;
+}

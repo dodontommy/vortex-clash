@@ -38,6 +38,20 @@ static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState
 
     const struct MoveData *move = attacker->current_attack;
 
+    /* Wakeup invincibility: skip hit if defender is invincible */
+    if (d->wakeup_timer > 0)
+        return;
+
+    /* OTG gating: hits on knocked-down opponents are restricted */
+    if (d->state == STATE_KNOCKDOWN) {
+        if (d->state_frame < 5 || d->state_frame > 20)
+            return;  /* Outside OTG window */
+        if (!(move->properties & MOVE_PROP_OTG))
+            return;  /* Move can't hit OTG */
+        if (!combo_can_otg(&attacker->combo))
+            return;  /* OTG already used this combo */
+    }
+
     /* Projectile moves: spawn a projectile entity instead of melee hit */
     if (move->properties & MOVE_PROP_PROJECTILE) {
         int owner = attacker->player_id - 1;
@@ -82,6 +96,17 @@ static void check_attack_hit(GameState *game, PlayerState *attacker, PlayerState
         /* Screen shake on hit (not block) */
         if (!blocking) {
             trigger_screen_shake(game, move->damage);
+        }
+
+        /* Meter gain: attacker full, defender half */
+        attacker->meter += move->meter_gain;
+        if (attacker->meter > MAX_METER) attacker->meter = MAX_METER;
+        defender->meter += move->meter_gain / 2;
+        if (defender->meter > MAX_METER) defender->meter = MAX_METER;
+
+        /* Track OTG use */
+        if (d->state == STATE_KNOCKDOWN && !blocking) {
+            combo_use_otg(&attacker->combo);
         }
 
         /* Mark as hit */
@@ -193,6 +218,12 @@ static void check_projectile_hits(GameState *game) {
                 trigger_screen_shake(game, proj->damage);
             }
 
+            /* Meter gain from projectile hit */
+            attacker_p->meter += proj_move.meter_gain;
+            if (attacker_p->meter > MAX_METER) attacker_p->meter = MAX_METER;
+            defender->meter += proj_move.meter_gain / 2;
+            if (defender->meter > MAX_METER) defender->meter = MAX_METER;
+
             /* Deactivate projectile on hit */
             proj->active = FALSE;
         }
@@ -221,6 +252,8 @@ void game_init(GameState *game) {
     projectile_init(&game->projectiles);
     game->hitstop_frames = 0;
     game->frame_count = 0;
+    game->ko_winner = -1;
+    game->ko_timer = 0;
     game->running = TRUE;
     game->debug_draw = FALSE;
     memset(game->combo_display, 0, sizeof(game->combo_display));
@@ -233,6 +266,17 @@ void game_init(GameState *game) {
 }
 
 void game_update(GameState *game) {
+    /* KO freeze: countdown then reset */
+    if (game->ko_timer > 0) {
+        game->ko_timer--;
+        if (game->ko_timer == 0) {
+            player_init(&game->players[0], 1, STAGE_WIDTH / 2 - 200, GROUND_Y - 80, CHAR_RYKER);
+            player_init(&game->players[1], 2, STAGE_WIDTH / 2 + 150, GROUND_Y - 80, CHAR_RYKER);
+            game->ko_winner = -1;
+        }
+        return;
+    }
+
     /* Toggle debug draw */
     if (IsKeyPressed(KEY_F1)) game->debug_draw = !game->debug_draw;
 
@@ -367,8 +411,10 @@ void game_update(GameState *game) {
     player_update_facing(&game->players[0], &game->players[1]);
 
     /* Use buffered input for players */
-    player_update(&game->players[0], input_get_current(&game->inputs[0]), &game->inputs[0]);
-    player_update(&game->players[1], input_get_current(&game->inputs[1]), &game->inputs[1]);
+    fixed_t p2x = game->players[1].chars[game->players[1].active_char].x;
+    fixed_t p1x = game->players[0].chars[game->players[0].active_char].x;
+    player_update(&game->players[0], input_get_current(&game->inputs[0]), &game->inputs[0], p2x);
+    player_update(&game->players[1], input_get_current(&game->inputs[1]), &game->inputs[1], p1x);
     update_player_anim(&game->sprites[0], &game->players[0]);
     update_player_anim(&game->sprites[1], &game->players[1]);
     player_resolve_collisions(&game->players[0], &game->players[1]);
@@ -420,6 +466,19 @@ void game_update(GameState *game) {
     /* Update projectiles: movement + despawn, then check hits */
     projectile_update(&game->projectiles);
     check_projectile_hits(game);
+
+    /* KO check: did either player's HP drop to 0? (skip in training mode) */
+    if (game->ko_winner < 0 && !game->training.active) {
+        CharacterState *c1 = &game->players[0].chars[game->players[0].active_char];
+        CharacterState *c2 = &game->players[1].chars[game->players[1].active_char];
+        if (c1->hp <= 0) {
+            game->ko_winner = 1;  /* P2 wins */
+            game->ko_timer = KO_FREEZE_FRAMES;
+        } else if (c2->hp <= 0) {
+            game->ko_winner = 0;  /* P1 wins */
+            game->ko_timer = KO_FREEZE_FRAMES;
+        }
+    }
 
     /* Decay screen shake */
     if (game->shake_frames > 0) game->shake_frames--;
@@ -565,7 +624,14 @@ void game_render(const GameState *game) {
     const CharacterState *p2c = &game->players[1].chars[game->players[1].active_char];
     render_health_bar(1, p1c->hp, p1c->max_hp, 50, 30);
     render_health_bar(2, p2c->hp, p2c->max_hp, SCREEN_WIDTH - 450, 30);
+    render_meter_bar(game->players[0].meter, MAX_METER, 50, 65);
+    render_meter_bar(game->players[1].meter, MAX_METER, SCREEN_WIDTH - 250, 65);
     render_frame_counter(game->frame_count);
+
+    /* KO text */
+    if (game->ko_timer > 0) {
+        render_ko_text();
+    }
 
     /* Combo counters */
     for (int i = 0; i < 2; i++) {

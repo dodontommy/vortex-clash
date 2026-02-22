@@ -1,10 +1,10 @@
 # Progress Tracker
 
 ## Current Phase
-Phase 7: Sprites, Projectiles, Training Mode & Polish
+Phase 9: Tag Team Mechanics (upcoming)
 
 ## Status
-IN PROGRESS
+Phase 7 & 8 COMPLETE
 
 ## Completed
 
@@ -32,7 +32,7 @@ IN PROGRESS
 - [x] Duplication eliminated (stage bounds, crouch enter, dash merge)
 - [x] Scaffolding: knockdown state, move properties (LAUNCHER/WALL_BOUNCE/GROUND_BOUNCE stubs)
 
-### Phase 7: Sprites, Projectiles, Training Mode (current)
+### Phase 7: Sprites, Projectiles, Training Mode & Gameplay Systems
 - [x] **Sprite system:** sprite.h/c with texture atlas loading, per-anim frame data from JSON, sprite_draw with facing flip
 - [x] **Projectile system:** projectile.h/c — MOVE_PROP_PROJECTILE spawns entity, per-player limit (1), lifetime/bounds despawn, hit detection with block/damage
 - [x] **Camera system:** dynamic zoom (1.5x-2.2x) based on player distance, smooth lerp, stage edge clamping
@@ -54,33 +54,45 @@ IN PROGRESS
   - Combo count preserved through blocks in training mode (for After 1st to work)
 - [x] **Combo counter HUD:** gold hit count + "HITS" label + damage, fade-out over 1 second after combo drop
 - [x] **Wall bounce / ground bounce:** MOVE_PROP_WALL_BOUNCE triggers bounce when defender near wall, MOVE_PROP_GROUND_BOUNCE triggers bounce on landing
+- [x] **Throw system:** L+M proximity check (THROW_RANGE=75), grounded only, no-motion guard (motion+L+M = super not throw), character_get_throw() API
+- [x] **Super meter:** Gain on hit (attacker full, defender half), MAX_METER=5000, meter bar rendering under health bars, super spend on activation
+- [x] **KO system:** HP<=0 triggers KO freeze (120 frames), "K.O.!" text centered on screen, auto-reset both players after timer
+- [x] **Wakeup invincibility:** 8 frames of invincibility after knockdown ends, attacks during wakeup frames are skipped
+- [x] **OTG window:** Knockdown frames 5-20 are hittable by MOVE_PROP_OTG moves only, one OTG per combo (combo_can_otg/combo_use_otg)
+
+### Phase 7.5: Gameplay Polish Pass
+- [x] **Dash jump speed cap:** Horizontal air speed from dash jumps capped to 8 px/frame (was 20). Dash jumps still go farther than normal jumps but no longer cross the entire stage.
+- [x] **Air friction: dash jumps only.** Normal jumps preserve full horizontal momentum. Only dash jumps decelerate (~0.125 px/frame²). This is an engine rule, not a tuning knob.
+- [x] **Projectile close-range fix:** Fireballs no longer spawn behind the opponent at point-blank range. Spawn position clamped so leading edge doesn't pass defender's front edge.
+- [x] **Pushbox separation fix:** Changed from `overlap/2 + 1` to `(overlap+1)/2` ceiling division — eliminates over-push jitter at close range.
+- [x] **Air-to-ground pushbox:** Airborne players are now pushed to one side of grounded opponents, preventing full horizontal overlap. Deterministic side resolution based on center positions — crossups are now clear and readable.
+- [x] **Engine-level cancel rules (not per-move flags):**
+  - All normals on hit grant at least CANCEL_BY_SPECIAL (special + super cancel). MOVE_PROP_CHAIN adds normal→normal chains on top.
+  - Lights (strength 0) can self-chain: L→L→L. Pushback and hitstun decay are the natural limiters.
+  - Mediums/heavies require strictly ascending strength for chains.
+- [x] **Frame data audit:** All chain routes now satisfy hitstun >= next startup + 3. Jab total frames reduced to ≤18. Standing and crouching magic series are true combos.
+
+### Phase 8: S Button, Super Jump, Launcher, Key Remapping
+- [x] S button: 5S (universal launcher) and j.S (air exchange/spikedown)
+- [x] Super jump cancel off 5S on hit (MOVE_PROP_SUPER_JUMP_CANCEL)
+- [x] 28 super jump from neutral (down→up input)
+- [x] Key remapping sub-menu in training mode
 
 ## Known Issues / Bugs
-- Magic series (chain combos) may break at close range — needs investigation (possibly pushbox/hitbox overlap issue at point-blank)
 - Combo counter display may not show in all cases — verify with BLOCK_NONE in training
-- No KO system yet — characters at 0 HP continue playing
 - `is_blocking` convention: currently checks hold-toward (matches code but unusual for FGs) — FIXED, now checks hold-back
 
-## Phase 7 Remaining (next up)
-- [ ] Launcher → air combo transition (super jump cancel on 2H hit)
-- [ ] Wakeup invincibility frames
-- [ ] OTG window in knockdown state
-- [ ] Per-move gatling tables (use cancel_into field)
-- [ ] Throw system (L+M proximity check)
-- [ ] Super meter gain/spend
-- [ ] Debug investigate: magic series close-range failure
-
 ## Future Phases
-- **Phase 8:** Second character (Titan — grappler), data-driven character loading
 - **Phase 9:** Tag team mechanics (raw tag, assists, DHC, snapback, incoming)
-- **Phase 10:** Full HUD (meter bars, burst gauge, timer, damage drain animation)
-- **Phase 11:** GGPO rollback netcode
-- **Phase 12:** Menu system, character select, training mode UI enhancements
-- **Phase 13:** Remaining characters (Zara, Viper, Aegis, Blaze) + audio
-- **Phase 14:** Polish (sprites, particles, balance, performance)
+- **Phase 10:** Full HUD (burst gauge, timer, damage drain animation)
+- **Phase 11:** Second character (Titan — grappler), data-driven character loading
+- **Phase 12:** GGPO rollback netcode
+- **Phase 13:** Menu system, character select, training mode UI enhancements
+- **Phase 14:** Remaining characters (Zara, Viper, Aegis, Blaze) + audio
+- **Phase 15:** Polish (sprites, particles, balance, performance)
 
 ## Tests
-190 tests, all passing
+283 tests, all passing
 
 ## Blockers
 (none)
@@ -98,3 +110,5 @@ IN PROGRESS
 - Blockstun pushback: friction decay instead of instant zero
 - Counter-hit system in hitbox_resolve_hit
 - Wall bounce / ground bounce mechanics implemented
+- Phase 8: S button, super jump, launcher, key remapping
+- Phase 7 completion: throws, meter, KO, wakeup invincibility, OTG window (283 tests passing)

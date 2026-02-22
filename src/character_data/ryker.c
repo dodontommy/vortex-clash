@@ -28,7 +28,7 @@ static const MoveData RYKER_5L = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_JUMP_CANCEL,
     .strength = 0,
     .meter_cost = 0,
-    .meter_gain = 50,
+    .meter_gain = 250,
     .anim_id = ANIM_ATTACK_BASE + 0
 };
 
@@ -54,7 +54,7 @@ static const MoveData RYKER_5M = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_JUMP_CANCEL,
     .strength = 1,
     .meter_cost = 0,
-    .meter_gain = 75,
+    .meter_gain = 375,
     .anim_id = ANIM_ATTACK_BASE + 1
 };
 
@@ -80,7 +80,7 @@ static const MoveData RYKER_5H = {
     .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL | MOVE_PROP_WALL_BOUNCE,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 100,
+    .meter_gain = 500,
     .anim_id = ANIM_ATTACK_BASE + 2
 };
 
@@ -106,7 +106,7 @@ static const MoveData RYKER_2L = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_JUMP_CANCEL,
     .strength = 0,
     .meter_cost = 0,
-    .meter_gain = 40,
+    .meter_gain = 200,
     .anim_id = ANIM_ATTACK_BASE + 3
 };
 
@@ -132,7 +132,7 @@ static const MoveData RYKER_2M = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_JUMP_CANCEL,
     .strength = 1,
     .meter_cost = 0,
-    .meter_gain = 60,
+    .meter_gain = 300,
     .anim_id = ANIM_ATTACK_BASE + 4
 };
 
@@ -158,7 +158,7 @@ static const MoveData RYKER_2H = {
     .properties = MOVE_PROP_LAUNCHER | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 110,
+    .meter_gain = 550,
     .anim_id = ANIM_ATTACK_BASE + 5
 };
 
@@ -184,7 +184,7 @@ static const MoveData RYKER_JL = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_OTG,
     .strength = 0,
     .meter_cost = 0,
-    .meter_gain = 45,
+    .meter_gain = 225,
     .anim_id = ANIM_ATTACK_BASE + 6
 };
 
@@ -210,7 +210,7 @@ static const MoveData RYKER_JM = {
     .properties = MOVE_PROP_CHAIN | MOVE_PROP_OTG,
     .strength = 1,
     .meter_cost = 0,
-    .meter_gain = 65,
+    .meter_gain = 325,
     .anim_id = ANIM_ATTACK_BASE + 7
 };
 
@@ -236,7 +236,7 @@ static const MoveData RYKER_JH = {
     .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL | MOVE_PROP_OTG,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 90,
+    .meter_gain = 450,
     .anim_id = ANIM_ATTACK_BASE + 8
 };
 
@@ -264,7 +264,7 @@ static const MoveData RYKER_FIREBALL_L = {
     .stance = STANCE_GROUNDED,
     .strength = 0,
     .meter_cost = 0,
-    .meter_gain = 60,
+    .meter_gain = 300,
     .anim_id = ANIM_SPECIAL_BASE + 0
 };
 
@@ -291,7 +291,7 @@ static const MoveData RYKER_FIREBALL_M = {
     .stance = STANCE_GROUNDED,
     .strength = 1,
     .meter_cost = 0,
-    .meter_gain = 70,
+    .meter_gain = 350,
     .anim_id = ANIM_SPECIAL_BASE + 1
 };
 
@@ -318,7 +318,7 @@ static const MoveData RYKER_FIREBALL_H = {
     .stance = STANCE_GROUNDED,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 80,
+    .meter_gain = 400,
     .anim_id = ANIM_SPECIAL_BASE + 2
 };
 
@@ -344,7 +344,7 @@ static const MoveData RYKER_UPPERCUT_L = {
     .properties = MOVE_PROP_INVINCIBLE | MOVE_PROP_LAUNCHER | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 80,
+    .meter_gain = 400,
     .anim_id = ANIM_SPECIAL_BASE + 3
 };
 
@@ -370,7 +370,7 @@ static const MoveData RYKER_UPPERCUT_M = {
     .properties = MOVE_PROP_INVINCIBLE | MOVE_PROP_LAUNCHER | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 90,
+    .meter_gain = 450,
     .anim_id = ANIM_SPECIAL_BASE + 4
 };
 
@@ -396,7 +396,7 @@ static const MoveData RYKER_UPPERCUT_H = {
     .properties = MOVE_PROP_INVINCIBLE | MOVE_PROP_LAUNCHER | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 100,
+    .meter_gain = 500,
     .anim_id = ANIM_SPECIAL_BASE + 5
 };
 
@@ -422,7 +422,7 @@ static const MoveData RYKER_SLIDE_L = {
     .properties = MOVE_PROP_LOW | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 70,
+    .meter_gain = 350,
     .anim_id = ANIM_SPECIAL_BASE + 6
 };
 
@@ -448,7 +448,7 @@ static const MoveData RYKER_SLIDE_M = {
     .properties = MOVE_PROP_LOW | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 80,
+    .meter_gain = 400,
     .anim_id = ANIM_SPECIAL_BASE + 7
 };
 
@@ -474,7 +474,7 @@ static const MoveData RYKER_SLIDE_H = {
     .properties = MOVE_PROP_LOW | MOVE_PROP_SLIDING_KD | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
-    .meter_gain = 90,
+    .meter_gain = 450,
     .anim_id = ANIM_SPECIAL_BASE + 8
 };
 
@@ -501,7 +501,7 @@ static const MoveData RYKER_DIVEAK_L = {
     .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .strength = 0,
     .meter_cost = 0,
-    .meter_gain = 65,
+    .meter_gain = 325,
     .anim_id = ANIM_SPECIAL_BASE + 9
 };
 
@@ -527,7 +527,7 @@ static const MoveData RYKER_DIVEAK_M = {
     .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .strength = 1,
     .meter_cost = 0,
-    .meter_gain = 75,
+    .meter_gain = 375,
     .anim_id = ANIM_SPECIAL_BASE + 10
 };
 
@@ -553,7 +553,7 @@ static const MoveData RYKER_DIVEAK_H = {
     .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 85,
+    .meter_gain = 425,
     .anim_id = ANIM_SPECIAL_BASE + 11
 };
 
@@ -581,7 +581,7 @@ static const MoveData RYKER_5S = {
     .stance = STANCE_GROUNDED | STANCE_STANDING,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 100,
+    .meter_gain = 500,
     .anim_id = ANIM_ATTACK_BASE + 2  /* reuse 5H animation as placeholder */
 };
 
@@ -607,7 +607,7 @@ static const MoveData RYKER_JS = {
     .properties = MOVE_PROP_HARD_KD,
     .strength = 2,
     .meter_cost = 0,
-    .meter_gain = 80,
+    .meter_gain = 400,
     .anim_id = ANIM_ATTACK_BASE + 8  /* reuse j.H animation as placeholder */
 };
 
@@ -712,7 +712,7 @@ static const MoveData RYKER_THROW = {
     .height = 40,
     .properties = MOVE_PROP_HARD_KD,
     .meter_cost = 0,
-    .meter_gain = 65
+    .meter_gain = 325
 };
 
 /* Ryker's assist move */
@@ -737,7 +737,7 @@ static const MoveData RYKER_ASSIST = {
     .height = 25,
     .properties = MOVE_PROP_PROJECTILE,
     .meter_cost = 0,
-    .meter_gain = 50
+    .meter_gain = 250
 };
 
 /* Ryker character definition */

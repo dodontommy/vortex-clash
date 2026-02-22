@@ -32,4 +32,8 @@ typedef int32_t bool_t;
 #define JUMP_VELOCITY FIXED_FROM_INT(-12)
 #define GROUND_Y 600  /* Y position of ground in screen coords */
 
+/* Air movement */
+#define DASH_JUMP_MAX_SPEED FIXED_FROM_INT(12)  /* Cap horizontal air speed from dash jumps (3x walk) */
+#define AIR_FRICTION (FIXED_FROM_INT(1) / 16)   /* Gentle air drag on dash jumps: ~0.0625 px/frame^2 */
+
 #endif /* TYPES_H */

@@ -78,6 +78,7 @@ typedef struct {
     bool_t ground_bounce_pending;  /* ground bounce available on landing */
     int ground_bounce_attacker;    /* player index (0 or 1) who applied ground bounce */
     bool_t ground_bounce_used;     /* ground bounce already used in this launched state */
+    int wakeup_timer;              /* invincibility frames remaining after knockdown wakeup */
 } CharacterState;
 
 /* Forward declaration */
@@ -114,9 +115,15 @@ typedef struct {
     int blue_hp;              /* Recoverable health on assist */
 } PlayerState;
 
+/* Throw range in pixels */
+#define THROW_RANGE 75
+
+/* Super meter cap */
+#define MAX_METER 5000
+
 /* Player functions */
 void player_init(PlayerState *p, int player_id, int start_x, int start_y, int char_id);
-void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf);
+void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf, fixed_t opponent_x);
 void player_render(const PlayerState *p);
 void player_update_facing(PlayerState *p1, PlayerState *p2);
 void player_resolve_collisions(PlayerState *p1, PlayerState *p2);
