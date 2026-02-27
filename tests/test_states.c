@@ -28,6 +28,22 @@ static CharacterState *active(PlayerState *p) {
     return &p->chars[p->active_char];
 }
 
+static const MoveData *current_move(const PlayerState *p) {
+    if (p->current_attack.type == ATTACK_REF_NONE ||
+        p->current_attack.type == ATTACK_REF_SYSTEM) {
+        return NULL;
+    }
+    return character_get_move_by_slot((CharacterId)p->character_id,
+                                      p->current_attack.type,
+                                      p->current_attack.index);
+}
+
+/* Forward declarations for helpers used across test sections. */
+static void tick_opp(PlayerState *p, uint32_t input, int frames, fixed_t opponent_x);
+static void reset_ground_defender(PlayerState *def, int x);
+static int current_move_hits(PlayerState *att, PlayerState *def);
+static void apply_current_move_hit(PlayerState *att, PlayerState *def);
+
 /* ========== TESTS ========== */
 
 static void test_idle_on_init(void) {
@@ -38,6 +54,15 @@ static void test_idle_on_init(void) {
     ASSERT(active(&p)->on_ground == TRUE, "starts on ground");
     ASSERT(active(&p)->vx == 0, "no horizontal velocity");
     ASSERT(active(&p)->vy == 0, "no vertical velocity");
+}
+
+static void test_throw_fields_on_init(void) {
+    printf("test_throw_fields_on_init:\n");
+    PlayerState p;
+    player_init(&p, 1, 200, 400, CHAR_RYKER);
+    ASSERT(active(&p)->throw_timer == 0, "throw timer starts at 0");
+    ASSERT(active(&p)->throw_owner_player == -1, "throw owner starts cleared");
+    ASSERT(active(&p)->throw_damage_applied == FALSE, "throw damage flag starts cleared");
 }
 
 static void test_walk_forward(void) {
@@ -409,7 +434,7 @@ static void test_cancel_idle_by_normal(void) {
     /* After buffer expires, attack commits */
     tick(&p, 0, PENDING_BUFFER_WAIT);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "attack commits after buffer");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M), "correct attack selected");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5M), "correct attack selected");
 }
 
 static void test_cancel_startup_by_two_button_dash(void) {
@@ -440,7 +465,7 @@ static void test_plink_dash_sequence(void) {
     tick(&p, 0, 2);  /* frames 1-2 of dash (locked) */
     tick(&p, INPUT_HEAVY, 1);  /* frame 3: newly pressed H — attack from dash (no buffer, lvl != FREE) */
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "step 3: attack from dash");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5H), "correct attack: 5H");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5H), "correct attack: 5H");
 }
 
 static void test_recovery_not_cancelable_on_whiff(void) {
@@ -472,7 +497,7 @@ static void test_chain_cancel_on_hit(void) {
      * No pending buffer here since lvl != CANCEL_FREE */
     tick(&p, INPUT_MEDIUM, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "chain cancel into 5M");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M), "new attack is 5M");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5M), "new attack is 5M");
     ASSERT(p.hit_confirmed == 0, "hit_confirmed reset on new attack");
 }
 
@@ -529,7 +554,7 @@ static void test_combo_buffer_during_recovery(void) {
     int remaining = jab->recovery_frames - press_at - 1;
     tick(&p, 0, remaining + 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "buffered M fires on idle");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M), "correct attack from buffer");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5M), "correct attack from buffer");
 }
 
 static void test_combo_buffer_expires(void) {
@@ -569,7 +594,7 @@ static void test_combo_buffer_chain_on_hit(void) {
     /* Next frame: buffer replays M, cancel level is now CANCEL_BY_NORMAL (CHAIN) */
     tick(&p, 0, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "buffered M chains on hit confirm");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M), "chained into 5M");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5M), "chained into 5M");
 }
 
 static void test_two_button_dash_leniency(void) {
@@ -602,6 +627,118 @@ static void test_two_button_dash_leniency(void) {
     ASSERT(p.buffered_button != 0, "L buffered for later");
 }
 
+static void test_hitstop_consume_exact_frames(void) {
+    printf("test_hitstop_consume_exact_frames:\n");
+    int hitstop = 3;
+    int freeze_frames = 0;
+    for (int i = 0; i < 5; i++) {
+        if (hitbox_consume_hitstop(&hitstop)) freeze_frames++;
+    }
+    ASSERT(freeze_frames == 3, "hitbox_consume_hitstop returns true exactly N times");
+    ASSERT(hitstop == 0, "hitstop reaches zero after N consumes");
+}
+
+static void test_hitstop_impact_tiers(void) {
+    printf("test_hitstop_impact_tiers:\n");
+    {
+        PlayerState att, def;
+        int hitstop = 0;
+        const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5L);
+        player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+        hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
+        ASSERT(hitstop == 3, "light hitstop = 3");
+    }
+    {
+        PlayerState att, def;
+        int hitstop = 0;
+        const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5M);
+        player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+        hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
+        ASSERT(hitstop == 4, "medium hitstop = 4");
+    }
+    {
+        PlayerState att, def;
+        int hitstop = 0;
+        const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5H);
+        player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+        hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
+        ASSERT(hitstop == 7, "heavy hitstop = 7");
+    }
+    {
+        PlayerState att, def;
+        int hitstop = 0;
+        const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5H);
+        player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+        hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 1);
+        ASSERT(hitstop == 8, "counter-hit adds +1 hitstop");
+    }
+}
+
+static void test_chain_5lmh_spacing_presets(void) {
+    printf("test_chain_5lmh_spacing_presets:\n");
+    int spacing_x[] = { 450, 460, 469 }; /* near, mid, max practical 5L reach */
+    const MoveData *m5 = character_get_normal(CHAR_RYKER, NORMAL_5M);
+    for (int i = 0; i < 3; i++) {
+        PlayerState att, def;
+        player_init(&att, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, spacing_x[i], GROUND_Y - 80, CHAR_RYKER);
+
+        commit_attack_from_idle(&att, INPUT_LIGHT);
+        tick(&att, 0, 4); /* 5L startup remainder -> active */
+        ASSERT(current_move_hits(&att, &def), "5L connects at preset spacing");
+        apply_current_move_hit(&att, &def);
+
+        tick_opp(&att, INPUT_MEDIUM, 1, active(&def)->x);
+        ASSERT(active(&att)->state == STATE_ATTACK_STARTUP, "5L->5M cancel starts");
+        ASSERT(current_move(&att) == m5, "canceled into 5M");
+
+        tick(&att, 0, m5->startup_frames - 1);
+        reset_ground_defender(&def, spacing_x[i]);
+        ASSERT(current_move_hits(&att, &def), "5M connects at preset spacing");
+        apply_current_move_hit(&att, &def);
+
+        tick_opp(&att, INPUT_HEAVY, 1, active(&def)->x);
+        ASSERT(active(&att)->state == STATE_ATTACK_STARTUP, "5M->5H cancel starts");
+        ASSERT(current_move(&att) == character_get_normal(CHAR_RYKER, NORMAL_5H),
+               "canceled into 5H");
+    }
+}
+
+static void test_chain_2lmh_spacing_presets(void) {
+    printf("test_chain_2lmh_spacing_presets:\n");
+    int spacing_x[] = { 450, 458, 464 }; /* near, mid, max practical 2L reach */
+    const MoveData *m2 = character_get_normal(CHAR_RYKER, NORMAL_2M);
+    for (int i = 0; i < 3; i++) {
+        PlayerState att, def;
+        player_init(&att, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+        player_init(&def, 2, spacing_x[i], GROUND_Y - 80, CHAR_RYKER);
+
+        tick(&att, INPUT_DOWN | INPUT_LIGHT, 1);
+        tick(&att, INPUT_DOWN, PENDING_BUFFER_WAIT);
+        tick(&att, INPUT_DOWN, 4); /* 2L startup remainder -> active */
+        ASSERT(current_move_hits(&att, &def), "2L connects at preset spacing");
+        apply_current_move_hit(&att, &def);
+
+        tick_opp(&att, INPUT_DOWN | INPUT_MEDIUM, 1, active(&def)->x);
+        ASSERT(active(&att)->state == STATE_ATTACK_STARTUP, "2L->2M cancel starts");
+        ASSERT(current_move(&att) == m2, "canceled into 2M");
+
+        tick(&att, INPUT_DOWN, m2->startup_frames - 1);
+        reset_ground_defender(&def, spacing_x[i]);
+        ASSERT(current_move_hits(&att, &def), "2M connects at preset spacing");
+        apply_current_move_hit(&att, &def);
+
+        tick_opp(&att, INPUT_DOWN | INPUT_HEAVY, 1, active(&def)->x);
+        ASSERT(active(&att)->state == STATE_ATTACK_STARTUP, "2M->2H cancel starts");
+        ASSERT(current_move(&att) == character_get_normal(CHAR_RYKER, NORMAL_2H),
+               "canceled into 2H");
+    }
+}
+
 /* ========== CROUCHING NORMAL TESTS ========== */
 
 /* Helper: press attack from crouch (hold DOWN through pending buffer) */
@@ -623,7 +760,7 @@ static void test_crouch_attack_2l(void) {
     commit_attack_from_crouch(&p, INPUT_LIGHT);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "2L attack started");
     ASSERT(active(&p)->height == crouch_h, "crouch height kept during 2L");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_2L), "correct move: 2L");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_2L), "correct move: 2L");
 }
 
 static void test_crouch_attack_returns_to_crouch(void) {
@@ -656,7 +793,7 @@ static void test_air_attack_jl(void) {
     /* Press L while airborne — commits immediately (no pending buffer in air) */
     tick(&p, INPUT_LIGHT, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "j.L started from air");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_JL), "correct move: j.L");
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_JL), "correct move: j.L");
 }
 
 static void test_air_attack_preserves_momentum(void) {
@@ -820,6 +957,46 @@ static void tick_opp(PlayerState *p, uint32_t input, int frames, fixed_t opponen
     }
 }
 
+static void reset_ground_defender(PlayerState *def, int x) {
+    CharacterState *d = active(def);
+    d->x = FIXED_FROM_INT(x);
+    d->y = FIXED_FROM_INT(GROUND_Y - d->standing_height);
+    d->state = STATE_IDLE;
+    d->state_frame = 0;
+    d->on_ground = TRUE;
+    d->vx = 0;
+    d->vy = 0;
+    d->in_hitstun = FALSE;
+    d->in_blockstun = FALSE;
+    d->hitstun_remaining = 0;
+    d->blockstun_remaining = 0;
+}
+
+static int current_move_hits(PlayerState *att, PlayerState *def) {
+    const MoveData *mv = current_move(att);
+    Hitbox hb;
+    Hurtbox hurt;
+    if (!mv) return 0;
+    hb.x = mv->x_offset;
+    hb.y = mv->y_offset;
+    hb.width = mv->width;
+    hb.height = mv->height;
+    hb.damage = mv->damage;
+    hb.hit_id = 0;
+    hurtbox_create(active(def), &hurt);
+    return hitbox_check_collision(&hb, &hurt,
+                                  FIXED_TO_INT(active(att)->x),
+                                  FIXED_TO_INT(active(att)->y),
+                                  active(att)->facing);
+}
+
+static void apply_current_move_hit(PlayerState *att, PlayerState *def) {
+    int hitstop = 0;
+    const MoveData *mv = current_move(att);
+    hitbox_resolve_hit(active(att), active(def), mv, 0, &att->combo, &def->combo, &hitstop, 0);
+    att->hit_confirmed = 1;
+}
+
 static void test_motion_qcf_p1(void) {
     printf("test_motion_qcf_p1:\n");
     InputBuffer buf;
@@ -891,8 +1068,8 @@ static void test_special_from_idle(void) {
     /* Pending buffer: wait for it to expire (special bypasses pending buffer
      * since the cancel chain checks motion before single-button normals) */
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "special move starts in ATTACK_STARTUP");
-    ASSERT(p.current_attack != NULL, "current attack set");
-    ASSERT(p.current_attack->move_type == MOVE_TYPE_SPECIAL, "attack is a special move");
+    ASSERT(current_move(&p) != NULL, "current attack set");
+    ASSERT(current_move(&p)->move_type == MOVE_TYPE_SPECIAL, "attack is a special move");
 }
 
 static void test_special_cancel_on_hit(void) {
@@ -915,8 +1092,8 @@ static void test_special_cancel_on_hit(void) {
     tick_with_buf(&p, &buf, INPUT_DOWN | INPUT_RIGHT, 2);
     tick_with_buf(&p, &buf, INPUT_RIGHT | INPUT_LIGHT, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "special cancel into fireball");
-    ASSERT(p.current_attack != NULL, "current attack set after cancel");
-    ASSERT(p.current_attack->move_type == MOVE_TYPE_SPECIAL, "cancelled into special");
+    ASSERT(current_move(&p) != NULL, "current attack set after cancel");
+    ASSERT(current_move(&p)->move_type == MOVE_TYPE_SPECIAL, "cancelled into special");
 }
 
 static void test_pending_buffer_preserves_direction(void) {
@@ -935,7 +1112,7 @@ static void test_pending_buffer_preserves_direction(void) {
     tick_with_buf(&p, &buf, INPUT_RIGHT, PENDING_BUFFER_WAIT - 2);
     /* 5M should have committed — NOT 2M. Direction was neutral at press time. */
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "attack started from pending buffer");
-    ASSERT(p.current_attack == character_get_normal(0, NORMAL_5M),
+    ASSERT(current_move(&p) == character_get_normal(0, NORMAL_5M),
            "5M committed (not 2M) despite DOWN held during buffer");
 }
 
@@ -1162,7 +1339,7 @@ static void test_light_self_chain(void) {
     /* Press L again — should chain into another 5L */
     tick_with_buf(&p1, &buf, INPUT_LIGHT, 1);
     ASSERT(active(&p1)->state == STATE_ATTACK_STARTUP, "5L chained into 5L");
-    ASSERT(p1.current_attack == jab, "still the same jab move");
+    ASSERT(current_move(&p1) == jab, "still the same jab move");
 }
 
 static void test_all_normals_special_cancel(void) {
@@ -1188,8 +1365,8 @@ static void test_all_normals_special_cancel(void) {
     input_update(&buf, INPUT_RIGHT | INPUT_LIGHT);
     player_update(&p, INPUT_RIGHT | INPUT_LIGHT, &buf, 0);
     /* Should have cancelled into special */
-    ASSERT(p.current_attack != NULL, "attack active after cancel");
-    ASSERT(p.current_attack->move_type == MOVE_TYPE_SPECIAL, "cancelled into special move");
+    ASSERT(current_move(&p) != NULL, "attack active after cancel");
+    ASSERT(current_move(&p)->move_type == MOVE_TYPE_SPECIAL, "cancelled into special move");
 }
 
 static void test_no_chain_down(void) {
@@ -1207,7 +1384,7 @@ static void test_no_chain_down(void) {
     p.hit_confirmed = 1;
     /* Try to chain into 5L — should fail (can't chain down M→L) */
     tick_with_buf(&p, &buf, INPUT_LIGHT, 1);
-    ASSERT(p.current_attack == med, "5M did NOT chain into 5L (can't chain down)");
+    ASSERT(current_move(&p) == med, "5M did NOT chain into 5L (can't chain down)");
 }
 
 static void test_hitstun_covers_chain_startup(void) {
@@ -1311,9 +1488,9 @@ static void test_5s_launcher(void) {
     /* Press S from ground — should start 5S */
     commit_attack_from_idle(&p, INPUT_SPECIAL);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "5S enters startup");
-    ASSERT(p.current_attack == character_get_normal(CHAR_RYKER, NORMAL_5S), "resolves to NORMAL_5S");
-    ASSERT(p.current_attack->properties & MOVE_PROP_LAUNCHER, "5S has LAUNCHER property");
-    ASSERT(p.current_attack->properties & MOVE_PROP_SUPER_JUMP_CANCEL, "5S has SUPER_JUMP_CANCEL property");
+    ASSERT(current_move(&p) == character_get_normal(CHAR_RYKER, NORMAL_5S), "resolves to NORMAL_5S");
+    ASSERT(current_move(&p)->properties & MOVE_PROP_LAUNCHER, "5S has LAUNCHER property");
+    ASSERT(current_move(&p)->properties & MOVE_PROP_SUPER_JUMP_CANCEL, "5S has SUPER_JUMP_CANCEL property");
 }
 
 static void test_js_air(void) {
@@ -1327,7 +1504,7 @@ static void test_js_air(void) {
     /* Press S while airborne — should start j.S */
     tick(&p, INPUT_SPECIAL, 1);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "j.S enters startup");
-    ASSERT(p.current_attack == character_get_normal(CHAR_RYKER, NORMAL_JS), "resolves to NORMAL_JS");
+    ASSERT(current_move(&p) == character_get_normal(CHAR_RYKER, NORMAL_JS), "resolves to NORMAL_JS");
 }
 
 static void test_super_jump_cancel_off_s(void) {
@@ -1402,7 +1579,17 @@ static void test_throw_in_range(void) {
     /* 6H (forward + heavy) at close range = throw */
     tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, opp_x);
     ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "throw starts at close range");
-    ASSERT(p.current_attack == character_get_throw(CHAR_RYKER), "throw move selected");
+    ASSERT(current_move(&p) == character_get_throw(CHAR_RYKER), "throw move selected");
+}
+
+static void test_throw_in_range_facing_left(void) {
+    printf("test_throw_in_range_facing_left:\n");
+    PlayerState p;
+    player_init(&p, 2, 500, GROUND_Y - 80, CHAR_RYKER); /* P2 starts facing left */
+    fixed_t opp_x = FIXED_FROM_INT(430); /* in front (left side) and in range */
+    tick_opp(&p, INPUT_LEFT | INPUT_HEAVY, 1, opp_x);
+    ASSERT(active(&p)->state == STATE_ATTACK_STARTUP, "throw starts while facing left");
+    ASSERT(current_move(&p) == character_get_throw(CHAR_RYKER), "throw selected while facing left");
 }
 
 static void test_throw_out_of_range(void) {
@@ -1413,8 +1600,32 @@ static void test_throw_out_of_range(void) {
     fixed_t opp_x = FIXED_FROM_INT(600);
     tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, opp_x);
     /* Should NOT throw — out of range, gets normal 5H instead */
-    ASSERT(p.current_attack != character_get_throw(CHAR_RYKER),
+    ASSERT(current_move(&p) != character_get_throw(CHAR_RYKER),
            "throw does not start out of range");
+}
+
+static void test_throw_range_boundary(void) {
+    printf("test_throw_range_boundary:\n");
+    PlayerState p;
+    const MoveData *throw_mv = character_get_throw(CHAR_RYKER);
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    /* P1 front edge at x=450, range=75 => boundary opponent x=525 should throw. */
+    tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, FIXED_FROM_INT(525));
+    ASSERT(current_move(&p) == throw_mv, "throw starts exactly at range boundary");
+
+    player_init(&p, 1, 400, GROUND_Y - 80, CHAR_RYKER);
+    tick_opp(&p, INPUT_RIGHT | INPUT_HEAVY, 1, FIXED_FROM_INT(526));
+    ASSERT(current_move(&p) != throw_mv, "throw does not start outside range boundary");
+}
+
+static void test_throw_move_data_defaults(void) {
+    printf("test_throw_move_data_defaults:\n");
+    const MoveData *throw_mv = character_get_throw(CHAR_RYKER);
+    ASSERT(throw_mv != NULL, "throw move exists");
+    ASSERT(throw_mv->throw_range == 75, "throw range set from move data");
+    ASSERT(throw_mv->throw_damage_frame == 6, "throw damage frame set");
+    ASSERT(throw_mv->throw_duration == 24, "throw duration set");
+    ASSERT(throw_mv->throw_side_switch == 0, "throw side switch default off");
 }
 
 static void test_throw_loses_to_motion(void) {
@@ -1432,8 +1643,8 @@ static void test_throw_loses_to_motion(void) {
     input_update(&buf, INPUT_RIGHT | INPUT_HEAVY);
     player_update(&p, INPUT_RIGHT | INPUT_HEAVY, &buf, opp_x);
     /* With QCF motion + 6H, special takes priority over throw */
-    if (p.current_attack != NULL) {
-        ASSERT(p.current_attack->move_type != MOVE_TYPE_THROW, "motion + 6H = special, not throw");
+    if (current_move(&p) != NULL) {
+        ASSERT(current_move(&p)->move_type != MOVE_TYPE_THROW, "motion + 6H = special, not throw");
     } else {
         ASSERT(1, "no throw when motion detected");
     }
@@ -1479,7 +1690,7 @@ static void test_meter_spend_on_super(void) {
     player_update(&p, INPUT_DOWN | INPUT_RIGHT, &buf, 0);
     input_update(&buf, INPUT_RIGHT | INPUT_LIGHT | INPUT_MEDIUM);
     player_update(&p, INPUT_RIGHT | INPUT_LIGHT | INPUT_MEDIUM, &buf, 0);
-    ASSERT(p.current_attack == super, "super activated");
+    ASSERT(current_move(&p) == super, "super activated");
     ASSERT(p.meter == 0, "meter spent on super");
 }
 
@@ -1751,8 +1962,7 @@ static void test_partner_init(void) {
 static void test_snapback_move_data(void) {
     printf("test_snapback_move_data:\n");
     /* Snapback: QCF+A1, 1 bar cost, HIT_TYPE_MID */
-    /* We can't easily access the static SNAPBACK_MOVE from game.c,
-     * but we can verify the system works by checking meter cost expectations */
+    /* Snapback lives in system_moves.c; keep validating design expectations here. */
     ASSERT(1000 == 1000, "snapback costs 1000 meter (1 bar)");
     /* Verify snap concept: if opponent partner is dead, no swap */
     PlayerState opp;
@@ -1896,6 +2106,7 @@ int main(void) {
     printf("=== Vortex Clash State Machine Tests ===\n\n");
 
     test_idle_on_init();
+    test_throw_fields_on_init();
     test_walk_forward();
     test_walk_backward();
     test_no_slide_on_tap();
@@ -1930,6 +2141,10 @@ int main(void) {
     test_combo_buffer_expires();
     test_combo_buffer_chain_on_hit();
     test_two_button_dash_leniency();
+    test_hitstop_consume_exact_frames();
+    test_hitstop_impact_tiers();
+    test_chain_5lmh_spacing_presets();
+    test_chain_2lmh_spacing_presets();
 
     /* Crouching normal tests */
     test_crouch_attack_2l();
@@ -1992,7 +2207,10 @@ int main(void) {
 
     /* Throw tests */
     test_throw_in_range();
+    test_throw_in_range_facing_left();
     test_throw_out_of_range();
+    test_throw_range_boundary();
+    test_throw_move_data_defaults();
     test_throw_loses_to_motion();
 
     /* Meter tests */

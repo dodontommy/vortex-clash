@@ -490,8 +490,8 @@ void render_hud_training_badge(void) {
     float ph = 24.0f;
 
     DrawRectangleRounded((Rectangle){px, py, pw, ph}, 0.5f, 8, (Color){20, 20, 30, 220});
-    DrawRectangleRoundedLines((Rectangle){px, py, pw, ph}, 0.5f, 8, 2.0f,
-                              (Color){255, 200, 0, 200});
+    DrawRectangleRoundedLinesEx((Rectangle){px, py, pw, ph}, 0.5f, 8, 2.0f,
+                                (Color){255, 200, 0, 200});
     float tw = hud_measure_text("TRAINING", 16);
     hud_draw_text("TRAINING", px + pw / 2 - tw / 2, py + 4, 16, (Color){255, 215, 0, 230});
 }

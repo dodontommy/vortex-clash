@@ -48,7 +48,7 @@ Phase 8 COMPLETE — Phase 9 IN PROGRESS
 - [x] **Projectile system:** projectile.h/c — MOVE_PROP_PROJECTILE spawns entity, per-player limit (1), lifetime/bounds despawn, hit detection with block/damage
 - [x] **Camera system:** dynamic zoom (1.5x-2.2x) based on player distance, smooth lerp, stage edge clamping
 - [x] **Screen shake:** damage-scaled amplitude, decay over frames
-- [x] **Visual polish:** hit flash (additive blend), defender vibration during hitstop, special/super move labels
+- [x] **Visual polish:** hit flash (alpha-tinted overlay), defender vibration during hitstop, special/super move labels
 - [x] **Sprite assets:** Ryker sprite sheet (tools/split_spritesheet.py for extraction)
 - [x] **is_blocking fix:** now correctly checks hold-back (away from attacker), was checking hold-toward
 - [x] **Blockstun pushback:** velocity decays with friction instead of zeroing instantly — blocked attacks have weight
@@ -65,7 +65,7 @@ Phase 8 COMPLETE — Phase 9 IN PROGRESS
   - Combo count preserved through blocks in training mode (for After 1st to work)
 - [x] **Combo counter HUD:** gold hit count + "HITS" label + damage, fade-out over 1 second after combo drop
 - [x] **Wall bounce / ground bounce:** MOVE_PROP_WALL_BOUNCE triggers bounce when defender near wall, MOVE_PROP_GROUND_BOUNCE triggers bounce on landing
-- [x] **Throw system:** L+M proximity check (THROW_RANGE=75), grounded only, no-motion guard (motion+L+M = super not throw), character_get_throw() API
+- [x] **Throw system:** 6H/4H proximity throw input, grounded-only checks, deterministic throw lock/thrown sequence, character_get_throw() API
 - [x] **Super meter:** Gain on hit (attacker full, defender half), MAX_METER=5000, meter bar rendering under health bars, super spend on activation
 - [x] **KO system:** HP<=0 triggers KO freeze (120 frames), "K.O.!" text centered on screen, auto-reset both players after timer
 - [x] **Wakeup invincibility:** 8 frames of invincibility after knockdown ends, attacks during wakeup frames are skipped
@@ -103,7 +103,7 @@ Phase 8 COMPLETE — Phase 9 IN PROGRESS
 - **Phase 15:** Polish (sprites, particles, balance, performance)
 
 ## Tests
-283 tests, all passing
+384 tests, all passing
 
 ## Blockers
 (none)
@@ -122,4 +122,4 @@ Phase 8 COMPLETE — Phase 9 IN PROGRESS
 - Counter-hit system in hitbox_resolve_hit
 - Wall bounce / ground bounce mechanics implemented
 - Phase 8: S button, super jump, launcher, key remapping
-- Phase 7 completion: throws, meter, KO, wakeup invincibility, OTG window (283 tests passing)
+- Phase 7 completion: throws, meter, KO, wakeup invincibility, OTG window (384 tests passing)

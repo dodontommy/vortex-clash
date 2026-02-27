@@ -62,3 +62,26 @@ const MoveData *character_get_assist_move(CharacterId id) {
     if (!c) return NULL;
     return c->assist_move;
 }
+
+const MoveData *character_get_move_by_slot(CharacterId id, int attack_ref_type, int index) {
+    const CharacterDef *c = character_get_def(id);
+    if (!c) return NULL;
+
+    switch (attack_ref_type) {
+        case ATTACK_REF_NORMAL:
+            if (index >= 0 && index < 16) return c->normals[index];
+            return NULL;
+        case ATTACK_REF_SPECIAL:
+            if (index >= 0 && index < 16) return c->specials[index];
+            return NULL;
+        case ATTACK_REF_SUPER:
+            if (index >= 0 && index < 4) return c->supers[index];
+            return NULL;
+        case ATTACK_REF_THROW:
+            return c->throw_move;
+        case ATTACK_REF_ASSIST:
+            return c->assist_move;
+        default:
+            return NULL;
+    }
+}

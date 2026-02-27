@@ -66,6 +66,7 @@ int projectile_spawn(ProjectileState *ps, int owner, const PlayerState *p, const
     proj->hitstun = move->hitstun;
     proj->blockstun = move->blockstun;
     proj->chip_damage = move->chip_damage;
+    proj->meter_gain = move->meter_gain;
     proj->hit_type = move->hit_type;
     proj->knockback_x = move->knockback_x;
     proj->knockback_y = move->knockback_y;

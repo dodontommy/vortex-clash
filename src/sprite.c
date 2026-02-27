@@ -26,6 +26,27 @@ static int anim_name_to_id(const char *name) {
     if (strcmp(name, "jL") == 0)  return ANIM_ATTACK_BASE + 6;
     if (strcmp(name, "jM") == 0)  return ANIM_ATTACK_BASE + 7;
     if (strcmp(name, "jH") == 0)  return ANIM_ATTACK_BASE + 8;
+    if (strcmp(name, "5S") == 0)  return ANIM_5S;
+    if (strcmp(name, "jS") == 0)  return ANIM_JS;
+    if (strcmp(name, "throw") == 0) return ANIM_THROW;
+    if (strcmp(name, "assist") == 0) return ANIM_ASSIST;
+    /* Specials */
+    if (strcmp(name, "236L") == 0) return ANIM_SPECIAL_BASE + 0;
+    if (strcmp(name, "236M") == 0) return ANIM_SPECIAL_BASE + 1;
+    if (strcmp(name, "236H") == 0) return ANIM_SPECIAL_BASE + 2;
+    if (strcmp(name, "623L") == 0) return ANIM_SPECIAL_BASE + 3;
+    if (strcmp(name, "623M") == 0) return ANIM_SPECIAL_BASE + 4;
+    if (strcmp(name, "623H") == 0) return ANIM_SPECIAL_BASE + 5;
+    if (strcmp(name, "214L") == 0) return ANIM_SPECIAL_BASE + 6;
+    if (strcmp(name, "214M") == 0) return ANIM_SPECIAL_BASE + 7;
+    if (strcmp(name, "214H") == 0) return ANIM_SPECIAL_BASE + 8;
+    if (strcmp(name, "j2L") == 0)  return ANIM_SPECIAL_BASE + 9;
+    if (strcmp(name, "j2M") == 0)  return ANIM_SPECIAL_BASE + 10;
+    if (strcmp(name, "j2H") == 0)  return ANIM_SPECIAL_BASE + 11;
+    /* Supers */
+    if (strcmp(name, "super1") == 0) return ANIM_SUPER_BASE + 0;
+    if (strcmp(name, "super2") == 0) return ANIM_SUPER_BASE + 1;
+    if (strcmp(name, "super3") == 0) return ANIM_SUPER_BASE + 2;
     return -1;
 }
 
@@ -50,6 +71,8 @@ void sprite_load(SpriteSet *set, const char *char_name) {
         TraceLog(LOG_WARNING, "SPRITE: Failed to load texture: %s", sheet_path);
         return;
     }
+    SetTextureFilter(set->sheet, TEXTURE_FILTER_POINT);
+    SetTextureWrap(set->sheet, TEXTURE_WRAP_CLAMP);
 
     /* Parse manifest */
     char *text = LoadFileText(manifest_path);
@@ -107,8 +130,8 @@ void sprite_unload(SpriteSet *set) {
     }
 }
 
-void sprite_draw(const SpriteSet *set, int anim_id, int frame_index,
-                 int x, int y, int facing, int dest_w, int dest_h) {
+void sprite_draw_tinted(const SpriteSet *set, int anim_id, int frame_index,
+                        int x, int y, int facing, int dest_w, int dest_h, Color tint) {
     if (!set->loaded) return;
     if (anim_id < 0 || anim_id >= ANIM_COUNT) return;
 
@@ -139,7 +162,12 @@ void sprite_draw(const SpriteSet *set, int anim_id, int frame_index,
      * Which simplifies to (x, y) — same as pushbox top-left. */
     Rectangle dst = { (float)x, (float)y, (float)dest_w, (float)dest_h };
 
-    DrawTexturePro(set->sheet, src, dst, (Vector2){0, 0}, 0.0f, WHITE);
+    DrawTexturePro(set->sheet, src, dst, (Vector2){0, 0}, 0.0f, tint);
+}
+
+void sprite_draw(const SpriteSet *set, int anim_id, int frame_index,
+                 int x, int y, int facing, int dest_w, int dest_h) {
+    sprite_draw_tinted(set, anim_id, frame_index, x, y, facing, dest_w, dest_h, WHITE);
 }
 
 #endif /* TESTING_HEADLESS */

@@ -25,24 +25,27 @@ void combo_init(ComboState *combo) {
     memset(combo, 0, sizeof(ComboState));
 }
 
-void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter) {
-    combo->hit_count++;
-
-    /* Calculate scaled damage */
-    int idx = combo->hit_count - 1;
+int combo_apply_hit(ComboState *combo, int base_damage, int is_light_hit) {
+    int idx = combo->hit_count;
     if (idx > 15) idx = 15;
+
+    if (combo->hit_count == 0 && is_light_hit) {
+        combo->light_starter = 1;
+    }
+
+    /* Calculate scaled damage from current hit index (0=first hit). */
     int scaling = DAMAGE_SCALING[idx];
 
-    /* Apply light starter additional reduction */
-    if (is_light_starter) {
+    /* Light-starter reduction applies to the whole combo. */
+    if (combo->light_starter) {
         scaling = (scaling * LIGHT_STARTER_MULT) / 100;
     }
-    
-    /* Calculate actual damage */
+
     int scaled = (base_damage * scaling) / 100;
+    combo->hit_count++;
     combo->total_damage += scaled;
     combo->combo_damage += scaled;
-    
+
     /* Update hitstun decay level */
     if (combo->hit_count >= 12) {
         combo->hitstun_decay_level = 3;
@@ -53,17 +56,22 @@ void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter) {
     } else {
         combo->hitstun_decay_level = 0;
     }
+
+    return scaled;
+}
+
+void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter) {
+    (void)combo_apply_hit(combo, base_damage, is_light_starter);
 }
 
 int combo_get_scaled_damage(ComboState *combo, int base_damage) {
-    if (combo->hit_count == 0) {
-        return base_damage;
-    }
-    
-    int idx = combo->hit_count - 1;
+    int idx = combo->hit_count;
     if (idx > 15) idx = 15;
-    
+
     int scaling = DAMAGE_SCALING[idx];
+    if (combo->light_starter) {
+        scaling = (scaling * LIGHT_STARTER_MULT) / 100;
+    }
     return (base_damage * scaling) / 100;
 }
 

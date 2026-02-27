@@ -1,7 +1,40 @@
 #include "hitbox.h"
 #include "character.h"
 #include "combo.h"
+#include "sprite.h"
 #include <string.h>
+
+#define HIT_FLASH_FRAMES 4
+
+static int impact_hitstop_for_move(const MoveData *move, int is_blocking, int counter_hit) {
+    int hs = 4;
+
+    if (move->move_type == MOVE_TYPE_NORMAL) {
+        if (move->strength <= 0) hs = 3;
+        else if (move->strength == 1) hs = 4;
+        else hs = 5;
+    } else if (move->move_type == MOVE_TYPE_SPECIAL) {
+        if (move->strength <= 0) hs = 4;
+        else if (move->strength == 1) hs = 5;
+        else hs = 6;
+    } else if (move->move_type == MOVE_TYPE_SUPER) {
+        hs = 7;
+    } else if (move->move_type == MOVE_TYPE_THROW) {
+        hs = 7;
+    }
+
+    if (move->properties & MOVE_PROP_LAUNCHER) hs += 1;
+    if (move->properties & MOVE_PROP_WALL_BOUNCE) hs += 2;
+    if (counter_hit) hs += 1;
+
+    if (is_blocking) {
+        hs -= (hs >= 6) ? 2 : 1;
+        if (hs < 2) hs = 2;
+    }
+
+    if (hs > 10) hs = 10;
+    return hs;
+}
 
 void hitbox_init(void) {
     /* Nothing to initialize — hitstop lives in GameState now */
@@ -65,17 +98,33 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
                         const struct MoveData *move, int is_blocking,
                         ComboState *attacker_combo, ComboState *defender_combo,
                         int *hitstop, int counter_hit) {
+    int direction = (defender->x > attacker->x) ? 1 : -1;
+    int combo_hits_before = attacker_combo ? attacker_combo->hit_count : 0;
+
     if (is_blocking) {
         /* Block: reduced damage, blockstun */
         int chip = move->chip_damage;
         if (chip < 1) chip = 1;  /* Minimum 1 chip */
-        defender->hp -= chip;
+        /* Chip cannot KO: defender is left at 1 HP minimum. */
+        if (defender->hp > 1) {
+            defender->hp -= chip;
+            if (defender->hp < 1) defender->hp = 1;
+        }
         defender->blockstun_remaining = move->blockstun;
         defender->state = STATE_BLOCKSTUN;
         defender->state_frame = 0;
+        defender->current_anim = ANIM_BLOCKSTUN;
+        defender->anim_frame = defender->crouching ? 2 : 0;
+        defender->anim_timer = 0;
+        defender->throw_timer = 0;
+        defender->throw_owner_player = -1;
+        defender->throw_damage_applied = FALSE;
+        defender->impact_pop_frames = 0;
+        defender->impact_pop_vy = 0;
+        defender->impact_pop_return = 0;
 
         /* Block pushback is greater than hit pushback (creates distance/safety) */
-        defender->vx = move->knockback_x * 130 / 100 * (defender->x > attacker->x ? 1 : -1);
+        defender->vx = move->knockback_x * 130 / 100 * direction;
 
         /* Block resets combo counter */
         if (attacker_combo) {
@@ -87,16 +136,14 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
     } else {
         /* Hit: apply damage scaling */
         int damage = move->damage;
+        int is_light_hit = (move->move_type == MOVE_TYPE_NORMAL && move->strength == 0);
         int hitstun_bonus = 0; /* extra hitstun from counter hit */
         if (counter_hit) {
             damage = (damage * 110) / 100;   /* 1.1x damage */
             hitstun_bonus = 1; /* flag for later */
         }
         if (attacker_combo) {
-            damage = combo_get_scaled_damage(attacker_combo, damage);
-            /* Check if this is a light starter (5L or 2L) */
-            int is_light = (move->damage == 1000 || move->damage == 800);
-            combo_on_hit(attacker_combo, move->damage, is_light);
+            damage = combo_apply_hit(attacker_combo, damage, is_light_hit);
         }
 
         defender->hp -= damage;
@@ -114,6 +161,23 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
 
         /* Apply hitstun with decay */
         int hitstun = move->hitstun;
+        int pushback_scale = 100;
+        int impact_scale = 108;
+
+        if (move->strength >= 1 || move->damage >= 1500) {
+            hitstun += 1;
+            impact_scale += 8;
+        }
+        if (move->strength >= 2 || move->damage >= 2000) {
+            hitstun += 1;
+            impact_scale += 14;
+        }
+        /* Keep chained confirms stable across spacing by soft-capping follow-up pushback. */
+        if (combo_hits_before >= 2) pushback_scale = 90;
+        else if (combo_hits_before >= 1) pushback_scale = 94;
+        impact_scale = (impact_scale * pushback_scale) / 100;
+        if (impact_scale < 70) impact_scale = 70;
+
         if (hitstun_bonus) {
             hitstun = (hitstun * 120) / 100; /* 1.2x hitstun on counter hit */
         }
@@ -125,7 +189,16 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
 
         defender->hitstun_remaining = hitstun;
         defender->in_hitstun = TRUE;
-        defender->hit_flash = 3;  /* White flash for 3 frames */
+        defender->hit_flash = HIT_FLASH_FRAMES;
+        defender->current_anim = ANIM_HITSTUN;
+        defender->anim_frame = !defender->on_ground ? 4 : (defender->crouching ? 3 : 1);
+        defender->anim_timer = 0;
+        defender->throw_timer = 0;
+        defender->throw_owner_player = -1;
+        defender->throw_damage_applied = FALSE;
+        defender->impact_pop_frames = 0;
+        defender->impact_pop_vy = 0;
+        defender->impact_pop_return = 0;
 
         /* Knockdown or hitstun based on move properties */
         if (move->properties & (MOVE_PROP_HARD_KD | MOVE_PROP_SLIDING_KD)) {
@@ -141,13 +214,13 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         if (!defender->on_ground) {
             /* Already airborne (juggle): slam them down into knockdown.
              * Preserves horizontal knockback but forces downward velocity. */
-            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vx = move->knockback_x * impact_scale / 100 * direction;
             defender->vy = FIXED_FROM_INT(8);  /* Fast downward slam */
             defender->state = STATE_HITSTUN;
             /* They'll land into knockdown via update_hitstun's landing check */
         } else if (move->properties & MOVE_PROP_LAUNCHER) {
             /* Launcher: send opponent airborne */
-            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vx = move->knockback_x * impact_scale / 100 * direction;
             defender->vy = move->knockback_y;
             defender->on_ground = FALSE;
             defender->state = STATE_HITSTUN;
@@ -159,8 +232,17 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
             }
         } else {
             /* Grounded hit: normal knockback */
-            defender->vx = move->knockback_x * (defender->x > attacker->x ? 1 : -1);
+            defender->vx = move->knockback_x * impact_scale / 100 * direction;
             defender->vy = move->knockback_y;
+            /* Visual weight: brief lift on grounded impacts before pushback slide. */
+            if (defender->on_ground) {
+                int pop_px = 1;
+                if (move->strength == 1) pop_px = 2;
+                if (move->strength >= 2 || move->move_type >= MOVE_TYPE_SPECIAL) pop_px = 3;
+                defender->impact_pop_frames = 1;
+                defender->impact_pop_vy = FIXED_FROM_INT(-pop_px);
+                defender->impact_pop_return = FIXED_FROM_INT(pop_px);
+            }
         }
         if (move->properties & MOVE_PROP_WALL_BOUNCE) {
             /* Check if wall bounce is available and defender is near wall */
@@ -183,13 +265,8 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         }
     }
 
-    /* Apply hitstop scaled by damage (light=3, medium=5, heavy=7) */
-    int hs = 3;
-    if (move->damage >= 1500) hs = 5;
-    if (move->damage >= 2000) hs = 7;
-    /* Reduce hitstop for airborne attacker (no freeze-in-air jank) */
-    if (!attacker->on_ground) hs = (hs + 1) / 2;
-    *hitstop = hs;
+    /* Tuned to keep impact while avoiding slow-motion feel in strings. */
+    *hitstop = impact_hitstop_for_move(move, is_blocking, counter_hit);
 }
 
 void hitbox_apply_hitstop(int *hitstop, int frames) {
@@ -204,4 +281,12 @@ void hitbox_update_hitstop(int *hitstop) {
 
 int hitbox_in_hitstop(const int *hitstop) {
     return *hitstop > 0;
+}
+
+int hitbox_consume_hitstop(int *hitstop) {
+    if (*hitstop > 0) {
+        (*hitstop)--;
+        return 1;
+    }
+    return 0;
 }

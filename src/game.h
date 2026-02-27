@@ -15,6 +15,16 @@ typedef struct {
     int fade_timer;           /* 60 = 1s at 60fps */
 } ComboDisplayState;
 
+#define MAX_HIT_SPARKS 24
+typedef struct {
+    int active;
+    float x, y;
+    float vx, vy;
+    int life;
+    int life_max;
+    unsigned char r, g, b, a;
+} HitSpark;
+
 /* Training mode enums */
 typedef enum {
     BLOCK_NONE, BLOCK_ALL, BLOCK_AFTER_FIRST,
@@ -46,7 +56,7 @@ typedef struct {
 #define CAMERA_PADDING    300  /* world pixels of margin around both players */
 
 /* Simulation state — flat, deterministic, serializable for GGPO rollback.
- * No pointers (except current_attack, deferred to Phase 12).
+ * No pointers.
  * No floats. All values are int or fixed_t. */
 typedef struct {
     PlayerState players[2];
@@ -72,6 +82,10 @@ typedef struct {
     float shake_amplitude;
     int shake_frames;
     int shake_frames_max;
+    float shake_dir_x;
+    float shake_dir_y;
+    /* Hit spark ring-buffer */
+    HitSpark hit_sparks[MAX_HIT_SPARKS];
     /* Combo counter display */
     ComboDisplayState combo_display[2];
     /* Damage drain effect */

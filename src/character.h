@@ -117,6 +117,11 @@ typedef struct MoveData {
     int meter_cost;
     int meter_gain;
     int anim_id;            /* AnimId for sprite animation (-1 = none) */
+    /* Throw-specific behavior (used when move_type == MOVE_TYPE_THROW). */
+    int throw_range;        /* Horizontal front-facing connect range in pixels */
+    int throw_damage_frame; /* Frame of throw sequence when damage is applied */
+    int throw_duration;     /* Total throw lock duration in frames */
+    int throw_side_switch;  /* 1 = swap sides by end of throw */
     const int *cancel_into; /* NULL = use properties flags, otherwise list of NORMAL_* indices terminated by -1 */
 } MoveData;
 
@@ -167,9 +172,10 @@ const MoveData *character_get_special(CharacterId id, int motion, int button);
 const MoveData *character_get_super(CharacterId id, int level);
 const MoveData *character_get_throw(CharacterId id);
 const MoveData *character_get_assist_move(CharacterId id);
+const MoveData *character_get_move_by_slot(CharacterId id, int attack_ref_type, int index);
 
 /* Helper macros for creating moves */
 #define MOVE(n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props) \
-    { #n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props, 0, 0, -1, NULL }
+    { #n, type, total, startup, act_start, act_end, rec, dmg, hs, bs, chip, ht, kbx, kby, xo, yo, w, h, props, 0, 0, 0, 0, -1, 0, 0, 0, 0, NULL }
 
 #endif /* CHARACTER_H */

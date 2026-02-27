@@ -16,7 +16,7 @@ typedef int32_t bool_t;
 /* Math helpers */
 #define FIXED_MUL(a, b) ((fixed_t)(((int64_t)(a) * (b)) >> FIXED_SHIFT))
 #define FIXED_DIV(a, b) ((fixed_t)(((int64_t)(a) << FIXED_SHIFT) / (b)))
-#define FIXED_FROM_INT(x) ((fixed_t)((x) << FIXED_SHIFT))
+#define FIXED_FROM_INT(x) ((fixed_t)((int64_t)(x) * (int64_t)FIXED_ONE))
 #define FIXED_TO_INT(x) ((x) >> FIXED_SHIFT)
 
 /* Screen dimensions */

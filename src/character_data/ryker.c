@@ -242,7 +242,7 @@ static const MoveData RYKER_JH = {
 
 /* Ryker's special moves */
 static const MoveData RYKER_FIREBALL_L = {
-    .name = "236L",
+    .name = "Guren Ken (L)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 50,
     .startup_frames = 14,
@@ -269,7 +269,7 @@ static const MoveData RYKER_FIREBALL_L = {
 };
 
 static const MoveData RYKER_FIREBALL_M = {
-    .name = "236M",
+    .name = "Guren Ken (M)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 55,
     .startup_frames = 16,
@@ -296,7 +296,7 @@ static const MoveData RYKER_FIREBALL_M = {
 };
 
 static const MoveData RYKER_FIREBALL_H = {
-    .name = "236H",
+    .name = "Guren Ken (H)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 60,
     .startup_frames = 18,
@@ -323,7 +323,7 @@ static const MoveData RYKER_FIREBALL_H = {
 };
 
 static const MoveData RYKER_UPPERCUT_L = {
-    .name = "623L",
+    .name = "Ressen Chou (L)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 48,
     .startup_frames = 5,
@@ -349,7 +349,7 @@ static const MoveData RYKER_UPPERCUT_L = {
 };
 
 static const MoveData RYKER_UPPERCUT_M = {
-    .name = "623M",
+    .name = "Ressen Chou (M)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 54,
     .startup_frames = 7,
@@ -375,7 +375,7 @@ static const MoveData RYKER_UPPERCUT_M = {
 };
 
 static const MoveData RYKER_UPPERCUT_H = {
-    .name = "623H",
+    .name = "Ressen Chou (H)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 60,
     .startup_frames = 9,
@@ -401,7 +401,7 @@ static const MoveData RYKER_UPPERCUT_H = {
 };
 
 static const MoveData RYKER_SLIDE_L = {
-    .name = "214L",
+    .name = "Mujin Kyaku (L)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 42,
     .startup_frames = 12,
@@ -412,14 +412,14 @@ static const MoveData RYKER_SLIDE_L = {
     .hitstun = 18,
     .blockstun = 14,
     .chip_damage = 140,
-    .hit_type = HIT_TYPE_LOW,
-    .knockback_x = FIXED_FROM_INT(8),
-    .knockback_y = 0,
-    .x_offset = 70,
-    .y_offset = 25,
-    .width = 60,
-    .height = 25,
-    .properties = MOVE_PROP_LOW | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
+    .hit_type = HIT_TYPE_HIGH,
+    .knockback_x = FIXED_FROM_INT(5),
+    .knockback_y = FIXED_FROM_INT(-4),
+    .x_offset = 35,
+    .y_offset = 5,
+    .width = 45,
+    .height = 60,
+    .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
     .meter_gain = 350,
@@ -427,7 +427,7 @@ static const MoveData RYKER_SLIDE_L = {
 };
 
 static const MoveData RYKER_SLIDE_M = {
-    .name = "214M",
+    .name = "Mujin Kyaku (M)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 48,
     .startup_frames = 14,
@@ -438,14 +438,14 @@ static const MoveData RYKER_SLIDE_M = {
     .hitstun = 20,
     .blockstun = 15,
     .chip_damage = 160,
-    .hit_type = HIT_TYPE_LOW,
-    .knockback_x = FIXED_FROM_INT(10),
-    .knockback_y = 0,
-    .x_offset = 80,
-    .y_offset = 25,
-    .width = 70,
-    .height = 25,
-    .properties = MOVE_PROP_LOW | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
+    .hit_type = HIT_TYPE_HIGH,
+    .knockback_x = FIXED_FROM_INT(6),
+    .knockback_y = FIXED_FROM_INT(-6),
+    .x_offset = 38,
+    .y_offset = 5,
+    .width = 50,
+    .height = 65,
+    .properties = MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
     .meter_gain = 400,
@@ -453,7 +453,7 @@ static const MoveData RYKER_SLIDE_M = {
 };
 
 static const MoveData RYKER_SLIDE_H = {
-    .name = "214H",
+    .name = "Mujin Kyaku (H)",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 54,
     .startup_frames = 16,
@@ -464,14 +464,14 @@ static const MoveData RYKER_SLIDE_H = {
     .hitstun = 22,
     .blockstun = 16,
     .chip_damage = 180,
-    .hit_type = HIT_TYPE_LOW,
-    .knockback_x = FIXED_FROM_INT(12),
-    .knockback_y = 0,
-    .x_offset = 90,
-    .y_offset = 25,
-    .width = 80,
-    .height = 25,
-    .properties = MOVE_PROP_LOW | MOVE_PROP_SLIDING_KD | MOVE_PROP_SPECIAL_CANCEL | MOVE_PROP_SUPER_CANCEL,
+    .hit_type = HIT_TYPE_HIGH,
+    .knockback_x = FIXED_FROM_INT(7),
+    .knockback_y = FIXED_FROM_INT(-8),
+    .x_offset = 42,
+    .y_offset = 5,
+    .width = 55,
+    .height = 70,
+    .properties = MOVE_PROP_LAUNCHER | MOVE_PROP_SUPER_CANCEL,
     .stance = STANCE_GROUNDED,
     .meter_cost = 0,
     .meter_gain = 450,
@@ -480,7 +480,7 @@ static const MoveData RYKER_SLIDE_H = {
 
 /* Air command normals: j.2+button (dive kicks) */
 static const MoveData RYKER_DIVEAK_L = {
-    .name = "j.2L",
+    .name = "Ressen Chuu (L)",
     .move_type = MOVE_TYPE_NORMAL,
     .total_frames = 35,
     .startup_frames = 10,
@@ -506,7 +506,7 @@ static const MoveData RYKER_DIVEAK_L = {
 };
 
 static const MoveData RYKER_DIVEAK_M = {
-    .name = "j.2M",
+    .name = "Ressen Chuu (M)",
     .move_type = MOVE_TYPE_NORMAL,
     .total_frames = 40,
     .startup_frames = 12,
@@ -532,7 +532,7 @@ static const MoveData RYKER_DIVEAK_M = {
 };
 
 static const MoveData RYKER_DIVEAK_H = {
-    .name = "j.2H",
+    .name = "Ressen Chuu (H)",
     .move_type = MOVE_TYPE_NORMAL,
     .total_frames = 45,
     .startup_frames = 14,
@@ -559,7 +559,7 @@ static const MoveData RYKER_DIVEAK_H = {
 
 /* S button normals: universal launcher + air exchange */
 static const MoveData RYKER_5S = {
-    .name = "5S",
+    .name = "Kanzuki Launcher",
     .move_type = MOVE_TYPE_NORMAL,
     .total_frames = 34,
     .startup_frames = 10,
@@ -582,11 +582,11 @@ static const MoveData RYKER_5S = {
     .strength = 2,
     .meter_cost = 0,
     .meter_gain = 500,
-    .anim_id = ANIM_ATTACK_BASE + 2  /* reuse 5H animation as placeholder */
+    .anim_id = ANIM_5S
 };
 
 static const MoveData RYKER_JS = {
-    .name = "j.S",
+    .name = "j.Kanzuki Spike",
     .move_type = MOVE_TYPE_NORMAL,
     .total_frames = 30,
     .startup_frames = 9,
@@ -608,12 +608,12 @@ static const MoveData RYKER_JS = {
     .strength = 2,
     .meter_cost = 0,
     .meter_gain = 400,
-    .anim_id = ANIM_ATTACK_BASE + 8  /* reuse j.H animation as placeholder */
+    .anim_id = ANIM_JS
 };
 
 /* Ryker's supers */
 static const MoveData RYKER_HADOU_BARRAGE = {
-    .name = "236LM (Lvl 1)",
+    .name = "Shinpi Kaibyaku (Lvl 1)",
     .move_type = MOVE_TYPE_SUPER,
     .total_frames = 80,
     .startup_frames = 11,
@@ -639,7 +639,7 @@ static const MoveData RYKER_HADOU_BARRAGE = {
 };
 
 static const MoveData RYKER_RUSH_COMBO = {
-    .name = "214LM (Lvl 1)",
+    .name = "Kou'ou Ken (Lvl 1)",
     .move_type = MOVE_TYPE_SUPER,
     .total_frames = 70,
     .startup_frames = 8,
@@ -665,7 +665,7 @@ static const MoveData RYKER_RUSH_COMBO = {
 };
 
 static const MoveData RYKER_ULTIMATE_BLAST = {
-    .name = "236HS (Lvl 3)",
+    .name = "Kanzuki Finale (Lvl 3)",
     .move_type = MOVE_TYPE_SUPER,
     .total_frames = 120,
     .startup_frames = 5,
@@ -692,7 +692,7 @@ static const MoveData RYKER_ULTIMATE_BLAST = {
 
 /* Ryker's throw */
 static const MoveData RYKER_THROW = {
-    .name = "Throw",
+    .name = "Kanzuki Throw",
     .move_type = MOVE_TYPE_THROW,
     .total_frames = 35,
     .startup_frames = 5,
@@ -712,12 +712,17 @@ static const MoveData RYKER_THROW = {
     .height = 40,
     .properties = MOVE_PROP_HARD_KD,
     .meter_cost = 0,
-    .meter_gain = 325
+    .meter_gain = 325,
+    .anim_id = ANIM_THROW,
+    .throw_range = 75,
+    .throw_damage_frame = 6,
+    .throw_duration = 24,
+    .throw_side_switch = 0
 };
 
 /* Ryker's assist move */
 static const MoveData RYKER_ASSIST = {
-    .name = "Assist Fireball",
+    .name = "Assist Guren",
     .move_type = MOVE_TYPE_SPECIAL,
     .total_frames = 55,
     .startup_frames = 16,
@@ -737,13 +742,14 @@ static const MoveData RYKER_ASSIST = {
     .height = 25,
     .properties = MOVE_PROP_PROJECTILE,
     .meter_cost = 0,
-    .meter_gain = 250
+    .meter_gain = 250,
+    .anim_id = ANIM_ASSIST
 };
 
 /* Ryker character definition */
 static const CharacterDef RYKER_DEF = {
     .id = CHAR_RYKER,
-    .name = "Ryker",
+    .name = "Karin",
     .walk_speed_forward = FIXED_FROM_INT(4),
     .walk_speed_backward = FIXED_FROM_INT(3),
     .jump_velocity = FIXED_FROM_INT(-12),
@@ -752,9 +758,9 @@ static const CharacterDef RYKER_DEF = {
     .super_jump_velocity = FIXED_FROM_INT(-16),
     .max_hp = 10000,
     .damage_multiplier = 100,
-    .jump_squat_frames = 4,
-    .dash_forward_frames = 14,
-    .dash_backward_frames = 16,
+    .jump_squat_frames = 3,
+    .dash_forward_frames = 12,
+    .dash_backward_frames = 14,
     .dash_friction = FIXED_FROM_INT(2),
     .dash_min_speed = FIXED_FROM_INT(3),
     .landing_frames = 2,

@@ -37,6 +37,9 @@ int hurtbox_create(CharacterState *c, Hurtbox *hurt);
 void hitbox_apply_hitstop(int *hitstop, int frames);
 void hitbox_update_hitstop(int *hitstop);
 int hitbox_in_hitstop(const int *hitstop);
+/* Consume one freeze frame if hitstop is active.
+ * Returns 1 when caller should skip simulation this frame. */
+int hitbox_consume_hitstop(int *hitstop);
 
 /* Check if defender is blocking (accounts for high/low/overhead) */
 int is_blocking(CharacterState *defender, CharacterState *attacker, uint32_t input, int hit_type);

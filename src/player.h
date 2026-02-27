@@ -36,6 +36,8 @@ typedef enum {
     STATE_ATTACK_STARTUP,
     STATE_ATTACK_ACTIVE,
     STATE_ATTACK_RECOVERY,
+    STATE_THROW_LOCK,      /* Attacker locked during throw sequence */
+    STATE_THROWN,          /* Defender captured during throw sequence */
     STATE_HITSTUN,
     STATE_BLOCKSTUN,
     STATE_KNOCKDOWN,
@@ -83,7 +85,33 @@ typedef struct {
     bool_t ground_bounce_used;     /* ground bounce already used in this launched state */
     int wakeup_timer;              /* invincibility frames remaining after knockdown wakeup */
     int blue_hp;                   /* recoverable health (heals off-screen) */
+    /* Throw sequence state (deterministic gameplay state). */
+    int throw_timer;               /* Frames elapsed in current throw sequence */
+    int throw_owner_player;        /* Capturing player index (0/1), or -1 */
+    bool_t throw_damage_applied;   /* Damage already applied for this throw */
+    /* Recoil micro-kinematics for weighty grounded hits. */
+    int impact_pop_frames;         /* 1f lift frame before slide */
+    fixed_t impact_pop_vy;         /* Temporary upward offset */
+    fixed_t impact_pop_return;     /* Return-to-ground offset */
+    /* Defensive rhythm: pushblock lockout to avoid spam. */
+    int pushblock_lockout;         /* Frames until next pushblock can trigger */
 } CharacterState;
+
+/* Deterministic move reference stored in rollback state. */
+typedef enum {
+    ATTACK_REF_NONE = 0,
+    ATTACK_REF_NORMAL,
+    ATTACK_REF_SPECIAL,
+    ATTACK_REF_SUPER,
+    ATTACK_REF_THROW,
+    ATTACK_REF_ASSIST,
+    ATTACK_REF_SYSTEM
+} AttackRefType;
+
+typedef struct {
+    int type;   /* AttackRefType */
+    int index;  /* Array index for the selected move category */
+} AttackRef;
 
 /* Forward declaration */
 struct MoveData;
@@ -99,7 +127,7 @@ typedef struct {
     uint32_t prev_input;      /* Previous frame's raw input for edge detection */
     int frame_counter;        /* Frame counter for this player */
     /* Attack tracking */
-    const struct MoveData *current_attack;
+    AttackRef current_attack;
     int attack_hit_id;        /* ID of last hit to prevent multi-hits */
     int opponent_hits[2];     /* Which opponent IDs have been hit this attack */
     /* Cancel hierarchy */
@@ -121,7 +149,7 @@ typedef struct {
     int assist_cooldown;      /* frames until next assist/tag (ticks down) */
     int assist_on_screen;     /* 1 = assist character visible and hittable */
     int assist_hit;           /* 1 = assist was hit during this call (sets 300f cooldown) */
-    const struct MoveData *assist_attack;  /* current assist move being performed */
+    AttackRef assist_attack;  /* ATTACK_REF_ASSIST while assist move is active */
     int assist_hit_id;        /* hit ID for assist's attack */
     int assist_opponent_hits[2]; /* which opponents the assist has hit this attack */
 } PlayerState;

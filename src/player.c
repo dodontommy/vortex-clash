@@ -3,6 +3,7 @@
 #include "hitbox.h"
 #include "combo.h"
 #include "character.h"
+#include "system_moves.h"
 #ifndef TESTING_HEADLESS
 #include <raylib.h>
 #endif
@@ -14,7 +15,7 @@
 #define DASH_CROUCH_CANCEL_FRAMES 6
 #define DASH_BUTTON_CANCEL_FRAMES 2  /* Min frames before attack button can cancel dash */
 #define TWO_BUTTON_DASH_LENIENCY 5  /* Frames of leniency for two-button dash input */
-#define COMBO_BUFFER_WINDOW      5  /* Frames to hold a buffered combo input */
+#define COMBO_BUFFER_WINDOW      8  /* Frames to hold a buffered combo input */
 
 /* Set animation on character state. Resets frame/timer if anim changed. */
 static void set_anim(CharacterState *c, int anim_id) {
@@ -44,6 +45,21 @@ void advance_anim(CharacterState *c) {
 /* Get character definition for this player */
 static const CharacterDef *get_char_def(const PlayerState *p) {
     return character_get_def((CharacterId)p->character_id);
+}
+
+static void clear_current_attack(PlayerState *p) {
+    p->current_attack.type = ATTACK_REF_NONE;
+    p->current_attack.index = 0;
+}
+
+static const struct MoveData *resolve_move_ref(CharacterId id, AttackRef ref) {
+    if (ref.type == ATTACK_REF_NONE) return NULL;
+    if (ref.type == ATTACK_REF_SYSTEM) return system_move_get(ref.index);
+    return character_get_move_by_slot(id, ref.type, ref.index);
+}
+
+static const struct MoveData *current_attack_move(const PlayerState *p) {
+    return resolve_move_ref((CharacterId)p->character_id, p->current_attack);
 }
 
 /* --- Extracted helpers --- */
@@ -101,6 +117,9 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y, int ch
     p->buffered_button = 0;
     p->buffered_button_frame = -100;
     p->last_down_frame = -100;
+    clear_current_attack(p);
+    p->assist_attack.type = ATTACK_REF_NONE;
+    p->assist_attack.index = 0;
 
     /* Initialize combo state */
     combo_init(&p->combo);
@@ -141,6 +160,13 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y, int ch
         c->anim_frame_duration = 1;
         c->anim_frame_count = 0;
         c->anim_looping = 1;
+        c->throw_timer = 0;
+        c->throw_owner_player = -1;
+        c->throw_damage_applied = FALSE;
+        c->impact_pop_frames = 0;
+        c->impact_pop_vy = 0;
+        c->impact_pop_return = 0;
+        c->pushblock_lockout = 0;
     }
 }
 
@@ -273,12 +299,14 @@ static void update_crouch(CharacterState *c, uint32_t input) {
  * During neutral (idle/walk/crouch), crouching flag matches input.
  * During chain cancels, the crouching flag may be stale from the
  * previous move — so we always use the live directional input. */
-static const struct MoveData *resolve_normal(const PlayerState *p, uint32_t button, uint32_t input) {
+static const struct MoveData *resolve_normal(const PlayerState *p, uint32_t button, uint32_t input, int *out_idx) {
     const CharacterState *c = &p->chars[p->active_char];
-    int idx;
+    int idx = -1;
+    if (out_idx) *out_idx = -1;
     /* S button: universal launcher (ground) or air exchange (air) */
     if (button & INPUT_SPECIAL) {
         idx = c->on_ground ? NORMAL_5S : NORMAL_JS;
+        if (out_idx) *out_idx = idx;
         return character_get_normal(p->character_id, idx);
     }
     if (!c->on_ground) {
@@ -287,13 +315,17 @@ static const struct MoveData *resolve_normal(const PlayerState *p, uint32_t butt
         if (INPUT_HAS(input, INPUT_DOWN)) {
             idx = (button & INPUT_LIGHT) ? NORMAL_J2L : (button & INPUT_MEDIUM) ? NORMAL_J2M : NORMAL_J2H;
             const struct MoveData *move = character_get_normal(p->character_id, idx);
-            if (move) return move;
+            if (move) {
+                if (out_idx) *out_idx = idx;
+                return move;
+            }
         }
         idx = (button & INPUT_LIGHT) ? NORMAL_JL : (button & INPUT_MEDIUM) ? NORMAL_JM : NORMAL_JH;
     } else if (INPUT_HAS(input, INPUT_DOWN))
         idx = (button & INPUT_LIGHT) ? NORMAL_2L : (button & INPUT_MEDIUM) ? NORMAL_2M : NORMAL_2H;
     else
         idx = (button & INPUT_LIGHT) ? NORMAL_5L : (button & INPUT_MEDIUM) ? NORMAL_5M : NORMAL_5H;
+    if (out_idx) *out_idx = idx;
     return character_get_normal(p->character_id, idx);
 }
 
@@ -466,7 +498,7 @@ static int air_attack_landed(PlayerState *p, CharacterState *c) {
     c->state = STATE_LANDING;
     c->state_frame = 0;
     c->vx = 0;
-    p->current_attack = NULL;
+    clear_current_attack(p);
     p->attack_from_air = FALSE;
     p->attack_from_crouch = FALSE;
     set_anim(c, ANIM_IDLE);
@@ -502,7 +534,7 @@ static void update_attack_recovery(PlayerState *p, CharacterState *c, const stru
         c->state = STATE_LANDING;
         c->state_frame = 0;
         c->vx = 0;
-        p->current_attack = NULL;
+        clear_current_attack(p);
         p->attack_from_air = FALSE;
         p->attack_from_crouch = FALSE;
         set_anim(c, ANIM_IDLE);
@@ -564,10 +596,24 @@ static void update_hitstun(CharacterState *c) {
         /* Grounded hitstun: no vertical movement */
         c->vy = 0;
 
+        /* 1f impact pop before pushback slide for heavier perceived contact. */
+        if (c->impact_pop_frames > 0) {
+            c->y += c->impact_pop_vy;
+            c->impact_pop_frames--;
+        } else if (c->impact_pop_return != 0) {
+            c->y += c->impact_pop_return;
+            c->impact_pop_return = 0;
+        }
+
         /* Apply decelerating pushback — slides backward, slows to stop */
         c->x += c->vx;
         if (c->vx > 0) { c->vx -= HITSTUN_FRICTION; if (c->vx < 0) c->vx = 0; }
         else if (c->vx < 0) { c->vx += HITSTUN_FRICTION; if (c->vx > 0) c->vx = 0; }
+
+        {
+            int ground_top = GROUND_Y - c->height;
+            if (c->y > FIXED_FROM_INT(ground_top)) c->y = FIXED_FROM_INT(ground_top);
+        }
     }
 
     clamp_stage_bounds(c);
@@ -576,6 +622,9 @@ static void update_hitstun(CharacterState *c) {
     if (c->state_frame >= c->hitstun_remaining) {
         c->in_hitstun = FALSE;
         c->vx = 0;
+        c->impact_pop_frames = 0;
+        c->impact_pop_vy = 0;
+        c->impact_pop_return = 0;
         if (!c->on_ground) {
             /* Airborne hitstun expired: fall freely until landing */
             c->state = STATE_AIRBORNE;
@@ -594,7 +643,7 @@ static void update_hitstun(CharacterState *c) {
     }
 }
 
-static void update_blockstun(CharacterState *c) {
+static void update_blockstun(CharacterState *c, uint32_t input) {
     /* Decay pushback velocity (friction) instead of zeroing it */
     c->vx = (c->vx * 85) / 100;  /* ~15% friction per frame */
     c->vy = 0;
@@ -602,11 +651,23 @@ static void update_blockstun(CharacterState *c) {
     set_anim(c, ANIM_BLOCKSTUN);
     c->state_frame++;
     if (c->state_frame >= c->blockstun_remaining) {
-        c->state = STATE_IDLE;
+        /* Preserve crouch hold after blockstun instead of always forcing idle. */
+        if (INPUT_HAS(input, INPUT_DOWN)) {
+            if (!c->crouching) enter_crouch(c);
+            c->state = STATE_CROUCH;
+            set_anim(c, ANIM_CROUCH);
+            c->anim_frame = 999;  /* already in crouch posture */
+        } else {
+            if (c->crouching) uncrouch(c);
+            c->state = STATE_IDLE;
+            set_anim(c, ANIM_IDLE);
+        }
         c->state_frame = 0;
         c->in_blockstun = FALSE;
         c->vx = 0;
-        set_anim(c, ANIM_IDLE);
+        c->impact_pop_frames = 0;
+        c->impact_pop_vy = 0;
+        c->impact_pop_return = 0;
     }
 }
 
@@ -628,6 +689,9 @@ static void update_knockdown(CharacterState *c) {
         c->state_frame = 0;
         c->in_hitstun = FALSE;
         c->vx = 0;
+        c->impact_pop_frames = 0;
+        c->impact_pop_vy = 0;
+        c->impact_pop_return = 0;
         set_anim(c, ANIM_IDLE);
         c->wakeup_timer = WAKEUP_FRAMES;
     }
@@ -647,7 +711,7 @@ static int can_cancel(CancelLevel level, ActionType action) {
  * Specials only get super cancel if MOVE_PROP_SUPER_CANCEL is set. */
 static CancelLevel cancel_level_from_move(const PlayerState *p) {
     if (!p->hit_confirmed) return CANCEL_NONE;
-    const struct MoveData *move = p->current_attack;
+    const struct MoveData *move = current_attack_move(p);
     if (!move) return CANCEL_NONE;
 
     if (move->move_type == MOVE_TYPE_NORMAL) {
@@ -667,6 +731,7 @@ static CancelLevel cancel_level_from_move(const PlayerState *p) {
  * Specials/supers bypass strength checks entirely. */
 static int can_cancel_into(const PlayerState *p, CancelLevel lvl, const struct MoveData *target) {
     if (!target) return 0;
+    const struct MoveData *current = current_attack_move(p);
     ActionType action;
     switch (target->move_type) {
         case MOVE_TYPE_SUPER:   action = ACTION_SUPER; break;
@@ -681,12 +746,12 @@ static int can_cancel_into(const PlayerState *p, CancelLevel lvl, const struct M
     /* Chain ordering: normal→normal via MOVE_PROP_CHAIN.
      * Lights (strength 0) can self-chain: L→L→L (pushback is the natural limiter).
      * Mediums and heavies require strictly ascending strength. */
-    if (action == ACTION_NORMAL && p->current_attack
-        && (p->current_attack->properties & MOVE_PROP_CHAIN)) {
-        if (target->strength < p->current_attack->strength)
+    if (action == ACTION_NORMAL && current
+        && (current->properties & MOVE_PROP_CHAIN)) {
+        if (target->strength < current->strength)
             return 0;  /* Can't chain down (H→M, M→L) */
-        if (target->strength == p->current_attack->strength
-            && p->current_attack->strength > 0)
+        if (target->strength == current->strength
+            && current->strength > 0)
             return 0;  /* Same strength blocked for M/H (no M→M, H→H) */
     }
     return 1;
@@ -733,9 +798,9 @@ static int stance_ok(const CharacterState *c, int stance) {
 }
 
 /* Start a new attack — replaces the 4 duplicated attack-start blocks */
-static void start_attack_move(PlayerState *p, const struct MoveData *move) {
+static void start_attack_move(PlayerState *p, const struct MoveData *move, AttackRef ref) {
     CharacterState *c = &p->chars[p->active_char];
-    p->current_attack = move;
+    p->current_attack = ref;
     p->attack_hit_id++;
     p->opponent_hits[0] = -1;
     p->opponent_hits[1] = -1;
@@ -779,6 +844,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
 
     /* Tick wakeup invincibility */
     if (c->wakeup_timer > 0) c->wakeup_timer--;
+    if (c->pushblock_lockout > 0) c->pushblock_lockout--;
 
     CancelLevel lvl = player_get_cancel_level(p);
     int action_taken = 0;
@@ -804,9 +870,10 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
             /* Use stored direction from press time, not current live input */
             uint32_t resolve_input = p->pending_attack_dir
                 | (input & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL));
-            const struct MoveData *move = resolve_normal(p, p->pending_attack, resolve_input);
+            int normal_idx = -1;
+            const struct MoveData *move = resolve_normal(p, p->pending_attack, resolve_input, &normal_idx);
             if (move) {
-                start_attack_move(p, move);
+                start_attack_move(p, move, (AttackRef){ ATTACK_REF_NORMAL, normal_idx });
             }
             p->pending_attack = 0;
         }
@@ -816,9 +883,10 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
     /* --- Combo buffer: replay stored input when cancel level opens --- */
     if (!action_taken && p->buffered_button) {
         if (p->frame_counter - p->buffered_button_frame < COMBO_BUFFER_WINDOW) {
-            const struct MoveData *move = resolve_normal(p, p->buffered_button, input);
+            int normal_idx = -1;
+            const struct MoveData *move = resolve_normal(p, p->buffered_button, input, &normal_idx);
             if (move && can_cancel_into(p, lvl, move)) {
-                start_attack_move(p, move);
+                start_attack_move(p, move, (AttackRef){ ATTACK_REF_NORMAL, normal_idx });
                 p->buffered_button = 0;
                 action_taken = 1;
             } else if (!can_cancel(lvl, ACTION_NORMAL)) {
@@ -845,7 +913,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
             const MoveData *super = character_get_super(p->character_id, 1);
             if (super && p->meter >= super->meter_cost && stance_ok(c, super->stance)) {
                 p->meter -= super->meter_cost;
-                start_attack_move(p, super);
+                start_attack_move(p, super, (AttackRef){ ATTACK_REF_SUPER, 0 });
                 action_taken = 1;
             }
         }
@@ -863,10 +931,16 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
             if (throw_motion == MOTION_NONE) {
                 const MoveData *throw_mv = character_get_throw(p->character_id);
                 if (throw_mv) {
-                    fixed_t dist = c->x - opponent_x;
-                    if (dist < 0) dist = -dist;
-                    if (dist <= FIXED_FROM_INT(THROW_RANGE)) {
-                        start_attack_move(p, throw_mv);
+                    int range = throw_mv->throw_range > 0 ? throw_mv->throw_range : THROW_RANGE;
+                    fixed_t front_gap;
+                    if (c->facing == 1) {
+                        front_gap = opponent_x - (c->x + FIXED_FROM_INT(c->width));
+                    } else {
+                        front_gap = c->x - opponent_x;
+                    }
+                    if (front_gap < 0) front_gap = 0;
+                    if (front_gap <= FIXED_FROM_INT(range)) {
+                        start_attack_move(p, throw_mv, (AttackRef){ ATTACK_REF_THROW, 0 });
                         action_taken = 1;
                     }
                 }
@@ -881,10 +955,15 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         && input_buf) {
         MotionType motion = input_detect_motion(input_buf, c->facing);
         if (motion != MOTION_NONE) {
+            int strength = (pressed & INPUT_LIGHT) ? 0 : (pressed & INPUT_MEDIUM) ? 1 : 2;
+            int special_idx = -1;
+            if (motion == MOTION_QCF) special_idx = 0 + strength;
+            else if (motion == MOTION_DP) special_idx = 3 + strength;
+            else if (motion == MOTION_QCB) special_idx = 6 + strength;
             const MoveData *special = character_get_special(p->character_id, motion,
                 pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY));
-            if (special && stance_ok(c, special->stance)) {
-                start_attack_move(p, special);
+            if (special && special_idx >= 0 && stance_ok(c, special->stance)) {
+                start_attack_move(p, special, (AttackRef){ ATTACK_REF_SPECIAL, special_idx });
                 action_taken = 1;
             }
         }
@@ -912,24 +991,28 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         } else if (lvl == CANCEL_FREE) {
             /* No dash possible (airborne, etc.) — commit immediately */
             uint32_t atk_btn = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
-            const struct MoveData *move = resolve_normal(p, atk_btn, input);
+            int normal_idx = -1;
+            const struct MoveData *move = resolve_normal(p, atk_btn, input, &normal_idx);
             if (move) {
-                start_attack_move(p, move);
+                start_attack_move(p, move, (AttackRef){ ATTACK_REF_NORMAL, normal_idx });
             }
         } else {
             /* From other cancelable states (on-hit): commit immediately */
             uint32_t atk_btn = pressed & (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY | INPUT_SPECIAL);
-            const struct MoveData *move = resolve_normal(p, atk_btn, input);
+            int normal_idx = -1;
+            const struct MoveData *move = resolve_normal(p, atk_btn, input, &normal_idx);
             if (move && can_cancel_into(p, lvl, move)) {
-                start_attack_move(p, move);
+                start_attack_move(p, move, (AttackRef){ ATTACK_REF_NORMAL, normal_idx });
             }
         }
         action_taken = 1;
     }
     /* 5. Jump cancel: MOVE_PROP_JUMP_CANCEL + hit_confirmed + UP */
+    {
+        const struct MoveData *move = current_attack_move(p);
     if (!action_taken && INPUT_HAS(input, INPUT_UP)
-             && p->hit_confirmed && p->current_attack
-             && (p->current_attack->properties & MOVE_PROP_JUMP_CANCEL)
+             && p->hit_confirmed && move
+             && (move->properties & MOVE_PROP_JUMP_CANCEL)
              && (c->state == STATE_ATTACK_ACTIVE || c->state == STATE_ATTACK_RECOVERY)
              && c->on_ground) {
         if (p->attack_from_crouch) {
@@ -939,15 +1022,18 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         c->state_frame = 0;
         c->super_jump = FALSE;
         set_anim(c, ANIM_JUMP);
-        p->current_attack = NULL;
+        clear_current_attack(p);
         p->hit_confirmed = 0;
         p->attack_from_crouch = FALSE;
         action_taken = 1;
     }
+    }
     /* 5b. Super jump cancel: MOVE_PROP_SUPER_JUMP_CANCEL + hit_confirmed + UP */
+    {
+        const struct MoveData *move = current_attack_move(p);
     if (!action_taken && INPUT_HAS(input, INPUT_UP)
-             && p->hit_confirmed && p->current_attack
-             && (p->current_attack->properties & MOVE_PROP_SUPER_JUMP_CANCEL)
+             && p->hit_confirmed && move
+             && (move->properties & MOVE_PROP_SUPER_JUMP_CANCEL)
              && (c->state == STATE_ATTACK_ACTIVE || c->state == STATE_ATTACK_RECOVERY)
              && c->on_ground) {
         if (p->attack_from_crouch) {
@@ -957,10 +1043,11 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         c->state_frame = 0;
         c->super_jump = TRUE;
         set_anim(c, ANIM_JUMP);
-        p->current_attack = NULL;
+        clear_current_attack(p);
         p->hit_confirmed = 0;
         p->attack_from_crouch = FALSE;
         action_taken = 1;
+    }
     }
     /* 6. Movement: double-tap dash, wavedash */
     if (!action_taken && can_cancel(lvl, ACTION_MOVEMENT)) {
@@ -986,6 +1073,7 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
 
     /* --- State frame updates --- */
     const CharacterDef *def = get_char_def(p);
+    const struct MoveData *active_move = current_attack_move(p);
     CharacterStateEnum pre_state = c->state;
     switch (c->state) {
         case STATE_IDLE: update_idle(c, input, def); break;
@@ -998,16 +1086,20 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         case STATE_DASH_FORWARD: update_dash(c, input, def, 1); break;
         case STATE_DASH_BACKWARD: update_dash(c, input, def, -1); break;
         case STATE_ATTACK_STARTUP:
-            if (p->current_attack) update_attack_startup(p, c, p->current_attack);
+            if (active_move) update_attack_startup(p, c, active_move);
             break;
         case STATE_ATTACK_ACTIVE:
-            if (p->current_attack) update_attack_active(p, c, p->current_attack);
+            if (active_move) update_attack_active(p, c, active_move);
             break;
         case STATE_ATTACK_RECOVERY:
-            if (p->current_attack) update_attack_recovery(p, c, p->current_attack);
+            if (active_move) update_attack_recovery(p, c, active_move);
+            break;
+        case STATE_THROW_LOCK:
+        case STATE_THROWN:
+            /* Throw sequence progression is driven by game_update. */
             break;
         case STATE_HITSTUN: update_hitstun(c); break;
-        case STATE_BLOCKSTUN: update_blockstun(c); break;
+        case STATE_BLOCKSTUN: update_blockstun(c, input); break;
         case STATE_KNOCKDOWN: update_knockdown(c); break;
         /* Tag/assist/incoming states are updated by game_update, not player_update */
         case STATE_TAG_DEPARTING:
@@ -1113,6 +1205,8 @@ static const char *state_to_string(CharacterStateEnum state) {
         case STATE_ATTACK_STARTUP: return "ATK_START";
         case STATE_ATTACK_ACTIVE: return "ATK_ACTIVE";
         case STATE_ATTACK_RECOVERY: return "ATK_RECV";
+        case STATE_THROW_LOCK: return "THROW_LOCK";
+        case STATE_THROWN: return "THROWN";
         case STATE_HITSTUN: return "HITSTUN";
         case STATE_BLOCKSTUN: return "BLOCKSTUN";
         case STATE_KNOCKDOWN: return "KNOCKDOWN";

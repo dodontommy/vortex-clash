@@ -3,6 +3,10 @@
 
 #ifndef TESTING_HEADLESS
 #include <raylib.h>
+#else
+typedef struct Color {
+    unsigned char r, g, b, a;
+} Color;
 #endif
 
 /* Animation IDs — state-based anims + attack-based anims */
@@ -20,6 +24,10 @@ typedef enum {
     ANIM_ATTACK_BASE = 16,  /* + NORMAL_5L/5M/5H/2L/2M/2H/JL/JM/JH (16-24) */
     ANIM_SPECIAL_BASE = 25, /* + specials: 236L/M/H, 623L/M/H, 214L/M/H, j.214L/M/H (25-36) */
     ANIM_SUPER_BASE = 37,   /* + supers (37-39) */
+    ANIM_5S = 40,           /* Stand S launcher */
+    ANIM_JS = 41,           /* Air S */
+    ANIM_THROW = 42,        /* Ground throw sequence */
+    ANIM_ASSIST = 43,       /* Assist call attack */
     ANIM_COUNT = 48
 } AnimId;
 
@@ -49,6 +57,8 @@ void sprite_unload(SpriteSet *set);
 /* Draw a sprite frame. facing: 1=right, -1=left. Anchored bottom-center. */
 void sprite_draw(const SpriteSet *set, int anim_id, int frame_index,
                  int x, int y, int facing, int dest_w, int dest_h);
+void sprite_draw_tinted(const SpriteSet *set, int anim_id, int frame_index,
+                        int x, int y, int facing, int dest_w, int dest_h, Color tint);
 
 /* Sync cached anim params from SpriteSet into CharacterState anim fields.
  * Called by game.c after player_update when anim changes. */

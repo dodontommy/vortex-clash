@@ -24,6 +24,7 @@ typedef struct {
     int hitstun;
     int blockstun;
     int chip_damage;
+    int meter_gain;
     int hit_type;
     fixed_t knockback_x, knockback_y;
     int properties;         /* copied from MoveData */

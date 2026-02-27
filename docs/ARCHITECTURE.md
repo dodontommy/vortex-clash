@@ -3,7 +3,7 @@
 ## Stack
 - **Language:** C99
 - **Graphics/Input/Audio:** Raylib 5.0
-- **Netcode:** GGPO (rollback)
+- **Netcode:** GGPO (rollback) planned; core simulation is being prepared for integration
 - **Build:** CMake with FetchContent
 
 ## Key Decisions

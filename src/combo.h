@@ -8,6 +8,7 @@ typedef struct {
     int hit_count;           /* Total hits in current combo */
     int total_damage;        /* Total damage dealt in combo */
     int combo_damage;        /* Combo damage for this opponent */
+    int light_starter;       /* 1 if combo started with a light normal */
     int otg_used;            /* OTG used this combo */
     int wall_bounce_used;    /* Wall bounce used this combo */
     int ground_bounce_used;  /* Ground bounce used this combo */
@@ -21,6 +22,7 @@ extern const int DAMAGE_SCALING[];
 
 /* Combo functions */
 void combo_init(ComboState *combo);
+int combo_apply_hit(ComboState *combo, int base_damage, int is_light_hit);
 void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter);
 int combo_get_scaled_damage(ComboState *combo, int base_damage);
 void combo_on_block(ComboState *combo);
