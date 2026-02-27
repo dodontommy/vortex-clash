@@ -249,17 +249,19 @@ void input_bindings_init(InputBindings *b, int player_id) {
         b->buttons[1] = (ButtonBinding){ KEY_B, GAMEPAD_BUTTON_RIGHT_FACE_UP };     /* M = B / Y */
         b->buttons[2] = (ButtonBinding){ KEY_N, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT };  /* H = N / B */
         b->buttons[3] = (ButtonBinding){ KEY_G, GAMEPAD_BUTTON_RIGHT_FACE_DOWN };   /* S = G / A */
+        b->buttons[4] = (ButtonBinding){ KEY_TAB, GAMEPAD_BUTTON_LEFT_TRIGGER_1 };  /* A1 = Tab / LB */
     } else {
         b->buttons[0] = (ButtonBinding){ KEY_KP_1, GAMEPAD_BUTTON_RIGHT_FACE_LEFT };
         b->buttons[1] = (ButtonBinding){ KEY_KP_2, GAMEPAD_BUTTON_RIGHT_FACE_UP };
         b->buttons[2] = (ButtonBinding){ KEY_KP_3, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT };
         b->buttons[3] = (ButtonBinding){ KEY_KP_0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN };
+        b->buttons[4] = (ButtonBinding){ KEY_KP_4, GAMEPAD_BUTTON_LEFT_TRIGGER_1 }; /* A1 = KP4 / LB */
     }
 }
 
 /* Input bits corresponding to each binding index */
 static const uint32_t binding_bits[REMAP_BUTTON_COUNT] = {
-    INPUT_LIGHT, INPUT_MEDIUM, INPUT_HEAVY, INPUT_SPECIAL
+    INPUT_LIGHT, INPUT_MEDIUM, INPUT_HEAVY, INPUT_SPECIAL, INPUT_A1
 };
 
 uint32_t input_poll_bound(int player_id, InputSource source, const InputBindings *b) {
@@ -306,9 +308,8 @@ uint32_t input_poll_bound(int player_id, InputSource source, const InputBindings
                     IsGamepadButtonDown(gamepad, b->buttons[i].gamepad_button))
                     input |= binding_bits[i];
             }
-            /* Bumpers: RB=Heavy (alt), LB=S (alt) — always hardcoded */
+            /* Bumper: RB=Heavy (alt) — always hardcoded */
             if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1)) input |= INPUT_HEAVY;
-            if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1))  input |= INPUT_SPECIAL;
         }
     }
 

@@ -101,6 +101,17 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
 
         defender->hp -= damage;
 
+        /* Blue health: 70% of damage becomes recoverable off-screen */
+        {
+            int blue = (damage * 70) / 100;
+            defender->blue_hp += blue;
+            /* Cap so hp + blue_hp <= max_hp */
+            if (defender->hp + defender->blue_hp > defender->max_hp) {
+                defender->blue_hp = defender->max_hp - defender->hp;
+                if (defender->blue_hp < 0) defender->blue_hp = 0;
+            }
+        }
+
         /* Apply hitstun with decay */
         int hitstun = move->hitstun;
         if (hitstun_bonus) {

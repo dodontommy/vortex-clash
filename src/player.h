@@ -38,7 +38,12 @@ typedef enum {
     STATE_ATTACK_RECOVERY,
     STATE_HITSTUN,
     STATE_BLOCKSTUN,
-    STATE_KNOCKDOWN
+    STATE_KNOCKDOWN,
+    STATE_TAG_DEPARTING,
+    STATE_ASSIST_ENTERING,
+    STATE_ASSIST_ACTIVE,
+    STATE_ASSIST_EXITING,
+    STATE_INCOMING_FALL
 } CharacterStateEnum;
 
 /* Character state data */
@@ -77,6 +82,7 @@ typedef struct {
     int ground_bounce_attacker;    /* player index (0 or 1) who applied ground bounce */
     bool_t ground_bounce_used;     /* ground bounce already used in this launched state */
     int wakeup_timer;              /* invincibility frames remaining after knockdown wakeup */
+    int blue_hp;                   /* recoverable health (heals off-screen) */
 } CharacterState;
 
 /* Forward declaration */
@@ -110,7 +116,14 @@ typedef struct {
     /* Combo tracking */
     ComboState combo;         /* Current combo state */
     int meter;                /* Super meter (0-5000) */
-    int blue_hp;              /* Recoverable health on assist */
+    /* Tag team state */
+    int tag_hold_timer;       /* frames A1 held (0 = not holding) */
+    int assist_cooldown;      /* frames until next assist/tag (ticks down) */
+    int assist_on_screen;     /* 1 = assist character visible and hittable */
+    int assist_hit;           /* 1 = assist was hit during this call (sets 300f cooldown) */
+    const struct MoveData *assist_attack;  /* current assist move being performed */
+    int assist_hit_id;        /* hit ID for assist's attack */
+    int assist_opponent_hits[2]; /* which opponents the assist has hit this attack */
 } PlayerState;
 
 /* Throw range in pixels */

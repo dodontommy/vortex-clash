@@ -105,40 +105,43 @@ void player_init(PlayerState *p, int player_id, int start_x, int start_y, int ch
     /* Initialize combo state */
     combo_init(&p->combo);
     p->meter = 0;
-    p->blue_hp = 0;
 
     const CharacterDef *def = character_get_def((CharacterId)char_id);
 
-    CharacterState *c = &p->chars[0];
-    c->state = STATE_IDLE;
-    c->state_frame = 0;
-    c->x = FIXED_FROM_INT(start_x);
-    c->y = FIXED_FROM_INT(start_y);
-    c->vx = 0;
-    c->vy = 0;
-    c->width = def->width;
-    c->standing_height = def->standing_height;
-    c->crouch_height = def->crouch_height;
-    c->height = c->standing_height;
-    c->color_r = (player_id == 1) ? 255 : 80;
-    c->color_g = (player_id == 1) ? 80 : 255;
-    c->color_b = 80;
-    c->facing = (player_id == 1) ? 1 : -1;
-    c->on_ground = TRUE;
-    c->dashing = FALSE;
-    c->crouching = FALSE;
-    c->in_hitstun = FALSE;
-    c->in_blockstun = FALSE;
-    c->hp = def->max_hp;
-    c->max_hp = def->max_hp;
-    c->hitstun_remaining = 0;
-    c->blockstun_remaining = 0;
-    c->current_anim = ANIM_IDLE;
-    c->anim_frame = 0;
-    c->anim_timer = 0;
-    c->anim_frame_duration = 1;
-    c->anim_frame_count = 0;
-    c->anim_looping = 1;
+    /* Initialize both characters on the team */
+    for (int ci = 0; ci < 2; ci++) {
+        CharacterState *c = &p->chars[ci];
+        c->state = STATE_IDLE;
+        c->state_frame = 0;
+        c->x = FIXED_FROM_INT(start_x);
+        c->y = FIXED_FROM_INT(start_y);
+        c->vx = 0;
+        c->vy = 0;
+        c->width = def->width;
+        c->standing_height = def->standing_height;
+        c->crouch_height = def->crouch_height;
+        c->height = c->standing_height;
+        c->color_r = (player_id == 1) ? 255 : 80;
+        c->color_g = (player_id == 1) ? 80 : 255;
+        c->color_b = 80;
+        c->facing = (player_id == 1) ? 1 : -1;
+        c->on_ground = TRUE;
+        c->dashing = FALSE;
+        c->crouching = FALSE;
+        c->in_hitstun = FALSE;
+        c->in_blockstun = FALSE;
+        c->hp = def->max_hp;
+        c->max_hp = def->max_hp;
+        c->blue_hp = 0;
+        c->hitstun_remaining = 0;
+        c->blockstun_remaining = 0;
+        c->current_anim = ANIM_IDLE;
+        c->anim_frame = 0;
+        c->anim_timer = 0;
+        c->anim_frame_duration = 1;
+        c->anim_frame_count = 0;
+        c->anim_looping = 1;
+    }
 }
 
 /* Crouch/uncrouch helpers */
@@ -708,6 +711,12 @@ static CancelLevel player_get_cancel_level(const PlayerState *p) {
         case STATE_ATTACK_ACTIVE:
         case STATE_ATTACK_RECOVERY:
             return cancel_level_from_move(p);
+        case STATE_TAG_DEPARTING:
+        case STATE_ASSIST_ENTERING:
+        case STATE_ASSIST_ACTIVE:
+        case STATE_ASSIST_EXITING:
+        case STATE_INCOMING_FALL:
+            return CANCEL_NONE;
         default:
             return CANCEL_NONE;
     }
@@ -1000,6 +1009,13 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         case STATE_HITSTUN: update_hitstun(c); break;
         case STATE_BLOCKSTUN: update_blockstun(c); break;
         case STATE_KNOCKDOWN: update_knockdown(c); break;
+        /* Tag/assist/incoming states are updated by game_update, not player_update */
+        case STATE_TAG_DEPARTING:
+        case STATE_ASSIST_ENTERING:
+        case STATE_ASSIST_ACTIVE:
+        case STATE_ASSIST_EXITING:
+        case STATE_INCOMING_FALL:
+            break;
         default: break;
     }
 
@@ -1028,6 +1044,9 @@ static int can_auto_face(const CharacterState *c) {
         case STATE_CROUCH:
         case STATE_LANDING:
             return 1;
+        case STATE_TAG_DEPARTING:
+        case STATE_INCOMING_FALL:
+            return 0;  /* Don't face toward off-screen characters */
         default:
             return 0;
     }
@@ -1097,6 +1116,11 @@ static const char *state_to_string(CharacterStateEnum state) {
         case STATE_HITSTUN: return "HITSTUN";
         case STATE_BLOCKSTUN: return "BLOCKSTUN";
         case STATE_KNOCKDOWN: return "KNOCKDOWN";
+        case STATE_TAG_DEPARTING: return "TAG_DEPART";
+        case STATE_ASSIST_ENTERING: return "ASSIST_ENTER";
+        case STATE_ASSIST_ACTIVE: return "ASSIST_ACTIVE";
+        case STATE_ASSIST_EXITING: return "ASSIST_EXIT";
+        case STATE_INCOMING_FALL: return "INCOMING";
         default: return "UNKNOWN";
     }
 }

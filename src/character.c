@@ -56,3 +56,9 @@ const MoveData *character_get_throw(CharacterId id) {
     if (!c) return NULL;
     return c->throw_move;
 }
+
+const MoveData *character_get_assist_move(CharacterId id) {
+    const CharacterDef *c = character_get_def(id);
+    if (!c) return NULL;
+    return c->assist_move;
+}

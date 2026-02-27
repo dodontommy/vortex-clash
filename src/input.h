@@ -12,6 +12,7 @@
 #define INPUT_MEDIUM (1 << 5)
 #define INPUT_HEAVY  (1 << 6)
 #define INPUT_SPECIAL (1 << 7)
+#define INPUT_A1      (1 << 8)
 
 /* Composite inputs */
 #define INPUT_SUPER  (INPUT_LIGHT | INPUT_MEDIUM | INPUT_HEAVY)  /* L+M+H = super */
@@ -66,7 +67,7 @@ typedef enum {
 uint32_t input_poll(int player_id, InputSource source);
 
 /* Key/gamepad remapping */
-#define REMAP_BUTTON_COUNT 4  /* L, M, H, S */
+#define REMAP_BUTTON_COUNT 5  /* L, M, H, S, A1 */
 typedef struct {
     int keyboard_key;    /* Raylib KEY_* constant */
     int gamepad_button;  /* Raylib GAMEPAD_BUTTON_* constant, -1 = unbound */
