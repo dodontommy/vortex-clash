@@ -74,8 +74,8 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         defender->state = STATE_BLOCKSTUN;
         defender->state_frame = 0;
 
-        /* Reduced knockback on block */
-        defender->vx = move->knockback_x / 2 * (defender->x > attacker->x ? 1 : -1);
+        /* Block pushback is greater than hit pushback (creates distance/safety) */
+        defender->vx = move->knockback_x * 130 / 100 * (defender->x > attacker->x ? 1 : -1);
 
         /* Block resets combo counter */
         if (attacker_combo) {

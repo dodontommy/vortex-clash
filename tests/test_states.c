@@ -1506,8 +1506,8 @@ static void test_wakeup_invincible(void) {
     active(&p)->state_frame = 0;
     active(&p)->in_hitstun = TRUE;
     active(&p)->vx = 0;
-    /* Tick through knockdown (30 frames) */
-    tick(&p, 0, 30);
+    /* Tick through knockdown (55 frames) */
+    tick(&p, 0, 55);
     ASSERT(active(&p)->state == STATE_IDLE, "wakeup reached IDLE");
     ASSERT(active(&p)->wakeup_timer > 0, "wakeup timer active after knockdown");
     ASSERT(active(&p)->wakeup_timer == 8, "wakeup timer is WAKEUP_FRAMES (8)");

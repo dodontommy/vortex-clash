@@ -24,7 +24,7 @@ typedef int32_t bool_t;
 #define SCREEN_HEIGHT 720
 
 /* Stage (world) dimensions — larger than screen, camera shows a portion */
-#define STAGE_WIDTH 1600
+#define STAGE_WIDTH 3200
 #define STAGE_HEIGHT 720
 
 /* Physics constants */

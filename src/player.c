@@ -607,7 +607,7 @@ static void update_blockstun(CharacterState *c) {
     }
 }
 
-#define KNOCKDOWN_FRAMES 30  /* total time on ground before wakeup */
+#define KNOCKDOWN_FRAMES 55  /* total time on ground before wakeup */
 #define WAKEUP_FRAMES 8      /* invincible wakeup animation */
 
 static void update_knockdown(CharacterState *c) {

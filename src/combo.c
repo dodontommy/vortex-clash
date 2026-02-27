@@ -29,7 +29,9 @@ void combo_on_hit(ComboState *combo, int base_damage, int is_light_starter) {
     combo->hit_count++;
 
     /* Calculate scaled damage */
-    int scaling = DAMAGE_SCALING[combo->hit_count - 1];
+    int idx = combo->hit_count - 1;
+    if (idx > 15) idx = 15;
+    int scaling = DAMAGE_SCALING[idx];
 
     /* Apply light starter additional reduction */
     if (is_light_starter) {
