@@ -35,7 +35,7 @@ typedef struct {
     bool_t hp_meter_reset;
     /* Key remap sub-menu */
     bool_t remap_open;        /* TRUE when remap sub-menu is visible */
-    int remap_cursor;         /* 0-3: L, M, H, S */
+    int remap_cursor;         /* 0-4: L, M, H, S, A1 */
     bool_t remap_listening;   /* TRUE when waiting for key/button press */
     int remap_target;         /* Which player's bindings to edit (0 = P1) */
 } TrainingState;
@@ -56,6 +56,7 @@ typedef struct {
     int frame_count;
     int ko_winner;          /* -1 = none, 0 = P1 wins, 1 = P2 wins */
     int ko_timer;           /* Freeze countdown after KO */
+    int timer_frames;       /* Countdown from 5940 (99s * 60fps), 0 = time up */
     TrainingState training; /* Affects simulation: block overrides, counter-hit, HP reset */
 } GameState;
 
@@ -73,9 +74,13 @@ typedef struct {
     int shake_frames_max;
     /* Combo counter display */
     ComboDisplayState combo_display[2];
+    /* Damage drain effect */
+    float damage_display_hp[2][2];  /* [player][char_slot] lerp target */
+    int damage_drain_delay[2][2];   /* 30f delay before drain starts */
 } GameRenderState;
 
 #define KO_FREEZE_FRAMES 120
+#define TIMER_START_FRAMES 5940  /* 99 seconds * 60 fps */
 
 /* Game functions */
 void game_init(GameState *game, GameRenderState *render);
