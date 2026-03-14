@@ -63,6 +63,8 @@ typedef struct {
     InputBuffer inputs[2];
     ProjectileState projectiles;
     int hitstop_frames;
+    int super_flash_frames;      /* Remaining freeze frames (0 = inactive) */
+    int super_flash_player;      /* Which player triggered it (0 or 1) */
     int frame_count;
     int ko_winner;          /* -1 = none, 0 = P1 wins, 1 = P2 wins */
     int ko_timer;           /* Freeze countdown after KO */
@@ -91,6 +93,8 @@ typedef struct {
     /* Damage drain effect */
     float damage_display_hp[2][2];  /* [player][char_slot] lerp target */
     int damage_drain_delay[2][2];   /* 30f delay before drain starts */
+    /* Super flash */
+    int super_flash_frames_max;     /* Total duration for alpha lerp */
 } GameRenderState;
 
 #define KO_FREEZE_FRAMES 120

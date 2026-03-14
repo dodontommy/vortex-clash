@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "WebSearch",
+      "WebFetch(domain:www.dustloop.com)",
+      "WebFetch(domain:www.streetfighter.com)",
+      "WebFetch(domain:andrea-jens.medium.com)",
+      "WebFetch(domain:ultimateframedata.com)",
+      "WebFetch(domain:libredd.it)",
+      "WebFetch(domain:critpoints.net)",
+      "WebFetch(domain:www.elecbyte.com)",
+      "WebFetch(domain:dustloop.com)",
+      "WebFetch(domain:streetfighter.fandom.com)",
+      "WebFetch(domain:wiki.shoryuken.com)",
+      "WebFetch(domain:gdkeys.com)",
+      "WebFetch(domain:sonichurricane.com)",
+      "WebFetch(domain:words.infil.net)",
+      "WebFetch(domain:www.rivalslib.com)"
+    ]
+  }
+}

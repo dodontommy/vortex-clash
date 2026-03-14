@@ -335,6 +335,8 @@ static void update_jump_squat(PlayerState *p, CharacterState *c, uint32_t input,
     /* Maintain ground momentum during jump squat (dash momentum if dashing) */
     if (c->dashing) {
         /* Keep dash velocity — will carry into air */
+    } else if (c->dash_jump) {
+        /* Keep auto-aim velocity from SJC — don't override */
     } else {
         int dir = get_input_dir(input);
         c->vx = dir * def->walk_speed_forward;
@@ -358,6 +360,9 @@ static void update_jump_squat(PlayerState *p, CharacterState *c, uint32_t input,
             else if (c->vx < -DASH_JUMP_MAX_SPEED) c->vx = -DASH_JUMP_MAX_SPEED;
             c->dashing = FALSE;
             c->dash_jump = TRUE;
+        } else if (c->dash_jump) {
+            /* SJC: keep auto-aim velocity, clear marker so no air friction */
+            c->dash_jump = FALSE;
         } else {
             int dir = get_input_dir(input);
             c->vx = dir * def->walk_speed_forward;
@@ -395,6 +400,7 @@ static void update_airborne(CharacterState *c, uint32_t input) {
             c->on_ground = TRUE;
             c->dash_jump = FALSE;
             c->super_jump = FALSE;
+            c->air_normals_used = 0;
             c->state = STATE_LANDING;
             c->state_frame = 0;
             set_anim(c, ANIM_IDLE);
@@ -476,6 +482,7 @@ static void apply_air_physics(CharacterState *c) {
         c->on_ground = TRUE;
         c->dash_jump = FALSE;
         c->super_jump = FALSE;
+        c->air_normals_used = 0;
     }
     clamp_stage_bounds(c);
 }
@@ -585,11 +592,16 @@ static void update_hitstun(CharacterState *c) {
             c->y = FIXED_FROM_INT(ground_top);
             c->vy = 0;
             c->on_ground = TRUE;
-            /* Land into knockdown (launched opponents don't just stand up) */
-            c->state = STATE_KNOCKDOWN;
-            c->state_frame = 0;
-            c->in_hitstun = FALSE;
-            c->vx = 0;
+            c->air_normals_used = 0;
+            /* Only knockdown if hitstun is nearly gone (dropped combo).
+             * If still in active hitstun, land into grounded hitstun instead. */
+            if (c->hitstun_remaining - c->state_frame <= 3) {
+                c->state = STATE_KNOCKDOWN;
+                c->state_frame = 0;
+                c->in_hitstun = FALSE;
+                c->vx = 0;
+            }
+            /* else: stay in STATE_HITSTUN, now grounded — combo can continue */
             return;
         }
     } else {
@@ -671,8 +683,8 @@ static void update_blockstun(CharacterState *c, uint32_t input) {
     }
 }
 
-#define KNOCKDOWN_FRAMES 55  /* total time on ground before wakeup */
-#define WAKEUP_FRAMES 8      /* invincible wakeup animation */
+/* Knockdown/wakeup constants now in feel.h */
+#include "feel.h"
 
 static void update_knockdown(CharacterState *c) {
     set_anim(c, ANIM_KNOCKDOWN);
@@ -742,7 +754,24 @@ static int can_cancel_into(const PlayerState *p, CancelLevel lvl, const struct M
      * Any normal on hit grants CANCEL_BY_SPECIAL, so any normal → 5S works. */
     if (action == ACTION_NORMAL && (target->properties & MOVE_PROP_LAUNCHER))
         action = ACTION_SPECIAL;
+    /* HARD_KD normals (j.S) also promoted to special tier so j.H → j.S works */
+    if (action == ACTION_NORMAL && (target->properties & MOVE_PROP_HARD_KD))
+        action = ACTION_SPECIAL;
     if (!can_cancel(lvl, action)) return 0;
+    /* Air magic series: each air normal usable once per airborne sequence */
+    {
+        const CharacterState *c = &p->chars[p->active_char];
+        if (!c->on_ground && target->move_type == MOVE_TYPE_NORMAL) {
+            /* Find the normal slot index for the target move */
+            for (int ni = NORMAL_JL; ni <= NORMAL_JS; ni++) {
+                if (character_get_normal(p->character_id, ni) == target) {
+                    if (c->air_normals_used & (1 << (ni - NORMAL_JL)))
+                        return 0;  /* Already used this air normal */
+                    break;
+                }
+            }
+        }
+    }
     /* Chain ordering: normal→normal via MOVE_PROP_CHAIN.
      * Lights (strength 0) can self-chain: L→L→L (pushback is the natural limiter).
      * Mediums and heavies require strictly ascending strength. */
@@ -814,6 +843,13 @@ static void start_attack_move(PlayerState *p, const struct MoveData *move, Attac
                                 && move->name && move->name[0] == '2');
         if (!is_crouch_normal) {
             uncrouch(c);
+        }
+    }
+    /* Air magic series: mark which air normal slot was used */
+    if (!c->on_ground && ref.type == ATTACK_REF_NORMAL) {
+        int ni = ref.index;
+        if (ni >= NORMAL_JL && ni <= NORMAL_JS) {
+            c->air_normals_used |= (1 << (ni - NORMAL_JL));
         }
     }
     c->state = STATE_ATTACK_STARTUP;
@@ -1046,6 +1082,15 @@ void player_update(PlayerState *p, uint32_t input, const InputBuffer *input_buf,
         clear_current_attack(p);
         p->hit_confirmed = 0;
         p->attack_from_crouch = FALSE;
+        /* SJC forward boost: walk speed in facing direction, no friction.
+         * MvC3-style — strong forward momentum so attacker reaches the
+         * launched opponent. Knockback on each air hit keeps the opponent
+         * moving with the attacker so they don't overshoot. */
+        {
+            const CharacterDef *sjc_def = get_char_def(p);
+            c->vx = sjc_def->walk_speed_forward * c->facing;
+            c->dash_jump = TRUE;  /* Marker: preserve vx through jump squat */
+        }
         action_taken = 1;
     }
     }
@@ -1218,6 +1263,12 @@ static const char *state_to_string(CharacterStateEnum state) {
         default: return "UNKNOWN";
     }
 }
+
+#ifdef TESTING_HEADLESS
+int can_cancel_into_test(const PlayerState *p, CancelLevel lvl, const struct MoveData *target) {
+    return can_cancel_into(p, lvl, target);
+}
+#endif
 
 #ifndef TESTING_HEADLESS
 void player_render(const PlayerState *p) {

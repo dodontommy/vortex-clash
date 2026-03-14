@@ -5,6 +5,8 @@
 #include "../src/hitbox.h"
 #include "../src/character.h"
 #include "../src/projectile.h"
+#include "../src/combo.h"
+#include "../src/feel.h"
 
 /* Simple test framework */
 static int tests_run = 0;
@@ -647,7 +649,7 @@ static void test_hitstop_impact_tiers(void) {
         player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
         player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
         hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
-        ASSERT(hitstop == 3, "light hitstop = 3");
+        ASSERT(hitstop == 4, "light hitstop = 4");
     }
     {
         PlayerState att, def;
@@ -656,7 +658,7 @@ static void test_hitstop_impact_tiers(void) {
         player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
         player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
         hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
-        ASSERT(hitstop == 4, "medium hitstop = 4");
+        ASSERT(hitstop == 6, "medium hitstop = 6");
     }
     {
         PlayerState att, def;
@@ -665,7 +667,7 @@ static void test_hitstop_impact_tiers(void) {
         player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
         player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
         hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 0);
-        ASSERT(hitstop == 7, "heavy hitstop = 7");
+        ASSERT(hitstop == 10, "heavy hitstop = 10 (8+2wb)");
     }
     {
         PlayerState att, def;
@@ -674,7 +676,7 @@ static void test_hitstop_impact_tiers(void) {
         player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
         player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
         hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 1);
-        ASSERT(hitstop == 8, "counter-hit adds +1 hitstop");
+        ASSERT(hitstop == 13, "counter-hit adds +3 hitstop");
     }
 }
 
@@ -1779,8 +1781,8 @@ static void test_blue_hp_on_hit(void) {
     hitbox_resolve_hit(active(&attacker), d, jab, 0, &attacker.combo, &defender.combo, &hitstop, 0);
     int damage_dealt = hp_before - d->hp;
     ASSERT(damage_dealt > 0, "damage was dealt");
-    int expected_blue = (damage_dealt * 70) / 100;
-    ASSERT(d->blue_hp == expected_blue, "blue_hp = 70% of damage");
+    int expected_blue = (damage_dealt * 50) / 100;
+    ASSERT(d->blue_hp == expected_blue, "blue_hp = 50% of damage");
 }
 
 static void test_blue_hp_recovery_offscreen(void) {
@@ -1812,10 +1814,10 @@ static void test_blue_hp_cap(void) {
     CharacterState *c = active(&p);
     c->hp = c->max_hp - 100;
     c->blue_hp = 0;
-    /* Hit: 70% of 1000 = 700 blue_hp, but capped at max_hp - hp = 100 */
+    /* Hit: 50% of 1000 = 500 blue_hp, but capped at max_hp - hp = 100 */
     int damage = 1000;
     c->hp -= damage;
-    int blue = (damage * 70) / 100;
+    int blue = (damage * 50) / 100;
     c->blue_hp += blue;
     if (c->hp + c->blue_hp > c->max_hp) {
         c->blue_hp = c->max_hp - c->hp;
@@ -2100,6 +2102,227 @@ static void test_timer_timeout_winner(void) {
     ASSERT(winner == 0, "tie goes to P1");
 }
 
+/* ========== Feel tuning tests ========== */
+
+static void test_counter_hit_hitstop_bonus(void) {
+    printf("test_counter_hit_hitstop_bonus:\n");
+    PlayerState att, def;
+    int hitstop_normal = 0, hitstop_ch = 0;
+    const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5M);
+    player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+    hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop_normal, 0);
+
+    player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+    hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop_ch, 1);
+    ASSERT(hitstop_ch - hitstop_normal == 3, "counter-hit adds +3f hitstop");
+}
+
+static void test_counter_hit_damage_130(void) {
+    printf("test_counter_hit_damage_130:\n");
+    PlayerState att, def;
+    int hitstop = 0;
+    const MoveData *mv = character_get_normal(CHAR_RYKER, NORMAL_5M);
+    player_init(&att, 1, 300, GROUND_Y - 80, CHAR_RYKER);
+    player_init(&def, 2, 350, GROUND_Y - 80, CHAR_RYKER);
+    int hp_before = active(&def)->hp;
+    hitbox_resolve_hit(active(&att), active(&def), mv, 0, &att.combo, &def.combo, &hitstop, 1);
+    int damage_dealt = hp_before - active(&def)->hp;
+    int expected = (mv->damage * 130) / 100;
+    ASSERT(damage_dealt == expected, "counter-hit deals 1.3x damage");
+}
+
+static void test_damage_scaling_floor_20(void) {
+    printf("test_damage_scaling_floor_20:\n");
+    ComboState combo;
+    combo_init(&combo);
+    int scaled = 0;
+    /* Drive combo to 20+ hits, verify floor */
+    for (int i = 0; i < 20; i++) {
+        scaled = combo_apply_hit(&combo, 1000, 0);
+    }
+    ASSERT(scaled == 200, "damage scaling floors at 20%");
+}
+
+static void test_hitstun_decay_tier4(void) {
+    printf("test_hitstun_decay_tier4:\n");
+    ComboState combo;
+    combo_init(&combo);
+    /* Drive to 13+ hits */
+    for (int i = 0; i < 13; i++) {
+        combo_apply_hit(&combo, 1000, 0);
+    }
+    int decay = combo_get_hitstun_decay(&combo);
+    ASSERT(decay == 40, "hitstun decay tier 4 = 40% at 13+ hits");
+}
+
+static void test_super_flash_constants(void) {
+    printf("test_super_flash_constants:\n");
+    /* Verify super flash constants from feel.h are reasonable */
+    ASSERT(SUPER_FLASH_LVL1 == 30, "lvl1 super flash = 30 frames");
+    ASSERT(SUPER_FLASH_LVL3 == 45, "lvl3 super flash = 45 frames");
+    ASSERT(SUPER_FLASH_LVL3 > SUPER_FLASH_LVL1, "lvl3 flash > lvl1 flash");
+}
+
+/* ========== Air Combo Tests ========== */
+
+static void test_air_hit_uses_move_knockback(void) {
+    printf("test_air_hit_uses_move_knockback:\n");
+    /* Air hit should use move's knockback_y, not hardcoded +8 */
+    PlayerState att, def;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    player_init(&def, 2, 280, 400, CHAR_RYKER);
+    CharacterState *d = active(&def);
+    /* Put defender airborne in hitstun (simulating launched state) */
+    d->on_ground = FALSE;
+    d->y -= FIXED_FROM_INT(80);
+    d->vy = 0;
+    d->state = STATE_HITSTUN;
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 30;
+    /* j.L has knockback_y = FIXED_FROM_INT(1) */
+    const MoveData *jl = character_get_normal(CHAR_RYKER, NORMAL_JL);
+    int hitstop = 0;
+    hitbox_resolve_hit(active(&att), d, jl, 0, &att.combo, &def.combo, &hitstop, 0);
+    ASSERT(d->vy != FIXED_FROM_INT(8), "air hit does NOT use hardcoded vy=8");
+    /* Non-KD air hits get at least JUGGLE_MIN_VY (-6) upward bounce */
+    ASSERT(d->vy <= JUGGLE_MIN_VY, "air hit applies juggle minimum bounce");
+}
+
+static void test_launcher_to_air_combo(void) {
+    printf("test_launcher_to_air_combo:\n");
+    /* 5S launcher → opponent launched → j.L hit → opponent stays in hitstun, not knockdown */
+    PlayerState att, def;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    player_init(&def, 2, 260, 400, CHAR_RYKER);
+    CharacterState *d = active(&def);
+    /* Simulate: opponent is airborne in hitstun (just launched) */
+    d->on_ground = FALSE;
+    d->y -= FIXED_FROM_INT(60);
+    d->vy = FIXED_FROM_INT(-3);
+    d->state = STATE_HITSTUN;
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 30;
+    /* Hit with j.L */
+    const MoveData *jl = character_get_normal(CHAR_RYKER, NORMAL_JL);
+    int hitstop = 0;
+    hitbox_resolve_hit(active(&att), d, jl, 0, &att.combo, &def.combo, &hitstop, 0);
+    ASSERT(d->state == STATE_HITSTUN, "j.L on launched opponent stays in hitstun");
+    ASSERT(d->state != STATE_KNOCKDOWN, "j.L on launched opponent NOT knockdown");
+}
+
+static void test_air_magic_series_one_per(void) {
+    printf("test_air_magic_series_one_per:\n");
+    /* After using j.L, can't use j.L again but can use j.M */
+    PlayerState att;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    CharacterState *c = active(&att);
+    c->on_ground = FALSE;
+    /* Mark j.L as used */
+    c->air_normals_used |= (1 << (NORMAL_JL - NORMAL_JL));  /* bit 0 */
+    const MoveData *jl = character_get_normal(CHAR_RYKER, NORMAL_JL);
+    const MoveData *jm = character_get_normal(CHAR_RYKER, NORMAL_JM);
+    /* Set up a current attack with CHAIN so cancel is possible */
+    att.hit_confirmed = 1;
+    att.current_attack = (AttackRef){ ATTACK_REF_NORMAL, NORMAL_JL };
+    c->state = STATE_ATTACK_ACTIVE;
+    CancelLevel lvl = CANCEL_BY_NORMAL;
+    /* j.L should be blocked (already used) */
+    ASSERT(!can_cancel_into_test(&att, lvl, jl), "j.L blocked on second use");
+    /* j.M should be allowed */
+    ASSERT(can_cancel_into_test(&att, lvl, jm), "j.M allowed after j.L");
+}
+
+static void test_juggle_gravity_progressive(void) {
+    printf("test_juggle_gravity_progressive:\n");
+    /* juggle_count increments on each air hit, effective vy increases */
+    PlayerState att, def;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    player_init(&def, 2, 280, 400, CHAR_RYKER);
+    CharacterState *d = active(&def);
+    const MoveData *jl = character_get_normal(CHAR_RYKER, NORMAL_JL);
+    int hitstop = 0;
+    /* First air hit */
+    d->on_ground = FALSE;
+    d->y -= FIXED_FROM_INT(80);
+    d->vy = 0;
+    d->state = STATE_HITSTUN;
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 30;
+    att.combo.juggle_count = 0;
+    hitbox_resolve_hit(active(&att), d, jl, 0, &att.combo, &def.combo, &hitstop, 0);
+    fixed_t vy1 = d->vy;
+    ASSERT(att.combo.juggle_count == 1, "juggle_count incremented to 1");
+    /* Second air hit */
+    d->state = STATE_HITSTUN;
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 30;
+    d->vy = 0;
+    hitbox_resolve_hit(active(&att), d, jl, 0, &att.combo, &def.combo, &hitstop, 0);
+    fixed_t vy2 = d->vy;
+    ASSERT(att.combo.juggle_count == 2, "juggle_count incremented to 2");
+    ASSERT(vy2 > vy1, "second air hit has more downward velocity");
+}
+
+static void test_js_forces_knockdown_in_air(void) {
+    printf("test_js_forces_knockdown_in_air:\n");
+    /* j.S with HARD_KD sets STATE_KNOCKDOWN on airborne opponent */
+    PlayerState att, def;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    player_init(&def, 2, 280, 400, CHAR_RYKER);
+    CharacterState *d = active(&def);
+    d->on_ground = FALSE;
+    d->y -= FIXED_FROM_INT(60);
+    d->vy = 0;
+    d->state = STATE_HITSTUN;
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 30;
+    const MoveData *js = character_get_normal(CHAR_RYKER, NORMAL_JS);
+    int hitstop = 0;
+    hitbox_resolve_hit(active(&att), d, js, 0, &att.combo, &def.combo, &hitstop, 0);
+    ASSERT(d->state == STATE_KNOCKDOWN, "j.S HARD_KD causes knockdown on airborne");
+}
+
+static void test_jh_chains_into_js(void) {
+    printf("test_jh_chains_into_js:\n");
+    /* j.H → j.S cancel should succeed via HARD_KD promotion */
+    PlayerState att;
+    player_init(&att, 1, 200, 400, CHAR_RYKER);
+    CharacterState *c = active(&att);
+    c->on_ground = FALSE;
+    /* Simulate: currently in j.H active, hit confirmed */
+    att.current_attack = (AttackRef){ ATTACK_REF_NORMAL, NORMAL_JH };
+    att.hit_confirmed = 1;
+    c->state = STATE_ATTACK_ACTIVE;
+    const MoveData *js = character_get_normal(CHAR_RYKER, NORMAL_JS);
+    /* j.H has SPECIAL_CANCEL, so lvl = CANCEL_BY_SPECIAL */
+    CancelLevel lvl = CANCEL_BY_SPECIAL;
+    ASSERT(can_cancel_into_test(&att, lvl, js), "j.H can cancel into j.S (HARD_KD promotion)");
+}
+
+static void test_air_land_hitstun_continues(void) {
+    printf("test_air_land_hitstun_continues:\n");
+    /* Opponent landing with hitstun remaining stays in hitstun, not knockdown */
+    PlayerState def;
+    player_init(&def, 2, 300, 400, CHAR_RYKER);
+    CharacterState *d = active(&def);
+    /* Set defender airborne in hitstun with lots of hitstun remaining */
+    d->on_ground = FALSE;
+    d->state = STATE_HITSTUN;
+    d->state_frame = 2;  /* only 2 frames into hitstun */
+    d->in_hitstun = TRUE;
+    d->hitstun_remaining = 20;  /* 18 frames of hitstun left */
+    d->y = FIXED_FROM_INT(GROUND_Y - d->height - 2);  /* just above ground */
+    d->vy = FIXED_FROM_INT(3);   /* falling */
+    d->vx = FIXED_FROM_INT(-1);
+    /* Tick once to trigger landing */
+    player_update(&def, 0, NULL, 0);
+    ASSERT(d->on_ground == TRUE, "defender landed");
+    ASSERT(d->state != STATE_KNOCKDOWN, "still in active combo - not knockdown");
+    ASSERT(d->state == STATE_HITSTUN, "landed into grounded hitstun");
+}
+
 /* ========== MAIN ========== */
 
 int main(void) {
@@ -2260,6 +2483,22 @@ int main(void) {
     test_timer_init();
     test_timer_countdown();
     test_timer_timeout_winner();
+
+    /* Feel tuning tests */
+    test_counter_hit_hitstop_bonus();
+    test_counter_hit_damage_130();
+    test_damage_scaling_floor_20();
+    test_hitstun_decay_tier4();
+    test_super_flash_constants();
+
+    /* Air combo tests */
+    test_air_hit_uses_move_knockback();
+    test_launcher_to_air_combo();
+    test_air_magic_series_one_per();
+    test_juggle_gravity_progressive();
+    test_js_forces_knockdown_in_air();
+    test_jh_chains_into_js();
+    test_air_land_hitstun_continues();
 
     printf("\n=== Results: %d/%d passed, %d failed ===\n",
            tests_passed, tests_run, tests_failed);

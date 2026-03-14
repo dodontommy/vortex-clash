@@ -4,21 +4,21 @@
 /* Damage scaling table - index by hit count (0 = first hit) */
 const int DAMAGE_SCALING[] = {
     100,  /* Hit 1 */
-    98,   /* Hit 2 */
-    96,   /* Hit 3 */
-    92,   /* Hit 4 */
-    88,   /* Hit 5 */
-    84,   /* Hit 6 */
-    80,   /* Hit 7 */
-    76,   /* Hit 8 */
-    72,   /* Hit 9+ */
-    72,
-    72,
-    72,
-    72,
-    72,
-    72,
-    72
+    96,   /* Hit 2 */
+    90,   /* Hit 3 */
+    82,   /* Hit 4 */
+    72,   /* Hit 5 */
+    62,   /* Hit 6 */
+    52,   /* Hit 7 */
+    42,   /* Hit 8 */
+    34,   /* Hit 9 */
+    28,   /* Hit 10 */
+    24,   /* Hit 11 */
+    20,   /* Hit 12+ */
+    20,
+    20,
+    20,
+    20
 };
 
 void combo_init(ComboState *combo) {
@@ -47,11 +47,13 @@ int combo_apply_hit(ComboState *combo, int base_damage, int is_light_hit) {
     combo->combo_damage += scaled;
 
     /* Update hitstun decay level */
-    if (combo->hit_count >= 12) {
+    if (combo->hit_count >= 13) {
+        combo->hitstun_decay_level = 4;
+    } else if (combo->hit_count >= 10) {
         combo->hitstun_decay_level = 3;
-    } else if (combo->hit_count >= 9) {
+    } else if (combo->hit_count >= 7) {
         combo->hitstun_decay_level = 2;
-    } else if (combo->hit_count >= 6) {
+    } else if (combo->hit_count >= 4) {
         combo->hitstun_decay_level = 1;
     } else {
         combo->hitstun_decay_level = 0;
@@ -86,10 +88,11 @@ void combo_reset(ComboState *combo) {
 /* Hitstun decay - returns percentage of normal hitstun */
 int combo_get_hitstun_decay(ComboState *combo) {
     switch (combo->hitstun_decay_level) {
-        case 0: return 100;  /* Hits 1-5: 100% */
-        case 1: return 85;   /* Hits 6-8: 85% */
-        case 2: return 70;  /* Hits 9-11: 70% */
-        case 3: return 55;  /* Hits 12+: 55% */
+        case 0: return 100;  /* Hits 1-3: 100% */
+        case 1: return 85;   /* Hits 4-6: 85% */
+        case 2: return 70;   /* Hits 7-9: 70% */
+        case 3: return 55;   /* Hits 10-12: 55% */
+        case 4: return 40;   /* Hits 13+: 40% */
         default: return 100;
     }
 }

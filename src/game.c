@@ -6,14 +6,13 @@
 #include "hitbox.h"
 #include "character.h"
 #include "system_moves.h"
+#include "feel.h"
 #include "sfx.h"
 #include <raylib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-
-#define HIT_FLASH_FRAMES 4
 
 static void clear_current_attack(PlayerState *p) {
     p->current_attack.type = ATTACK_REF_NONE;
@@ -117,9 +116,7 @@ typedef enum {
     IMPACT_CINEMATIC = 4
 } ImpactTier;
 
-#define PUSHBLOCK_PUSH_PX 180
-#define PUSHBLOCK_LOCKOUT_FRAMES 24
-#define PUSHBLOCK_EXTRA_BLOCKSTUN 4
+/* Pushblock constants now in feel.h */
 
 static int attack_strength_from_move(const MoveData *move) {
     if (!move) return 0;
@@ -154,7 +151,11 @@ static ImpactTier impact_tier_for_move(const MoveData *move, int blocked, int co
     if (move->properties & (MOVE_PROP_WALL_BOUNCE | MOVE_PROP_HARD_KD)) {
         if (tier < IMPACT_CINEMATIC) tier++;
     }
-    if (counter_hit || (move->properties & MOVE_PROP_LAUNCHER)) {
+    if (counter_hit) {
+        if (tier < IMPACT_CINEMATIC) tier++;
+        if (tier < IMPACT_CINEMATIC) tier++;
+    }
+    if (move->properties & MOVE_PROP_LAUNCHER) {
         if (tier < IMPACT_CINEMATIC) tier++;
     }
     if (blocked && tier > IMPACT_LIGHT) {
@@ -181,14 +182,14 @@ static void trigger_screen_shake(GameRenderState *render, ImpactTier tier, int d
     if (tier <= IMPACT_LIGHT) {
         return; /* No shake on lights: keeps pace snappy. */
     } else if (tier == IMPACT_MEDIUM) {
-        amp = 1.0f;
-        frames = 2;
+        amp = SHAKE_MED_AMP10 / 10.0f;
+        frames = SHAKE_MED_FRAMES;
     } else if (tier == IMPACT_HEAVY) {
-        amp = 1.8f;
-        frames = 3;
+        amp = SHAKE_HVY_AMP10 / 10.0f;
+        frames = SHAKE_HVY_FRAMES;
     } else {
-        amp = 2.6f;
-        frames = 4;
+        amp = SHAKE_CIN_AMP10 / 10.0f;
+        frames = SHAKE_CIN_FRAMES;
     }
 
     if (render->shake_frames > 0 && render->shake_amplitude > amp) {
@@ -314,7 +315,7 @@ static void process_pushblock(GameState *game, GameRenderState *render, uint32_t
             def->blockstun_remaining += PUSHBLOCK_EXTRA_BLOCKSTUN;
             if (def->blockstun_remaining > 30) def->blockstun_remaining = 30;
             def->state_frame = 0;
-            def->pushblock_lockout = PUSHBLOCK_LOCKOUT_FRAMES;
+            def->pushblock_lockout = PUSHBLOCK_LOCKOUT;
 
             spawn_hit_spark(render,
                             FIXED_TO_INT(def->x) + def->width / 2,
@@ -476,7 +477,7 @@ static void update_throw_sequences(GameState *game, GameRenderState *render) {
                             IMPACT_CINEMATIC,
                             0);
             sfx_play_impact(damage, 0, 1, 0, 0);
-            render->damage_drain_delay[defender->player_id - 1][defender->active_char] = 30;
+            render->damage_drain_delay[defender->player_id - 1][defender->active_char] = DAMAGE_DRAIN_DELAY;
         }
 
         if (a->throw_timer >= throw_duration) {
@@ -656,7 +657,7 @@ static void apply_attack_hit(GameState *game, GameRenderState *render, PlayerSta
     if (!result->blocking) {
         attacker->hit_confirmed = 1;
         /* Reset damage drain delay for the defender's active character */
-        render->damage_drain_delay[defender->player_id - 1][defender->active_char] = 30;
+        render->damage_drain_delay[defender->player_id - 1][defender->active_char] = DAMAGE_DRAIN_DELAY;
 
         /* Snapback on hit: force opponent character swap */
         if (attacker->current_attack.type == ATTACK_REF_SYSTEM &&
@@ -805,7 +806,7 @@ static void check_projectile_hits(GameState *game, GameRenderState *render, uint
             if (!blocking) {
                 attacker_p->hit_confirmed = 1;
                 trigger_screen_shake(render, tier, proj->facing, (proj->knockback_y < 0) ? -1 : 1);
-                render->damage_drain_delay[def_idx][defender->active_char] = 30;
+                render->damage_drain_delay[def_idx][defender->active_char] = DAMAGE_DRAIN_DELAY;
                 if (trace_result && trace_result[proj->owner] == 0) trace_result[proj->owner] = 1;
             } else if (trace_result && trace_result[proj->owner] == 0) {
                 trace_result[proj->owner] = 2;
@@ -1027,10 +1028,23 @@ void game_update(GameState *game, GameRenderState *render) {
         if (cs->hit_flash > 0) cs->hit_flash--;
     }
 
-    /* Consume hitstop after sampling inputs: N configured frames => N frozen updates. */
+    /* Consume hitstop after sampling inputs: N configured frames => N frozen updates.
+     * Keep prev_input in sync so rising-edge detection works across hitstop. */
     if (hitbox_consume_hitstop(&game->hitstop_frames)) {
+        for (int i = 0; i < 2; i++)
+            game->players[i].prev_input = input_get_current(&game->inputs[i]);
         trace_write_frame(game, 0, 0);
         return;  /* Skip update during hitstop */
+    }
+
+    /* Super flash: simulation-pausing freeze (like MvC3).
+     * Both players freeze; inputs are polled above but not acted on (buffered). */
+    if (game->super_flash_frames > 0) {
+        game->super_flash_frames--;
+        for (int i = 0; i < 2; i++)
+            game->players[i].prev_input = input_get_current(&game->inputs[i]);
+        trace_write_frame(game, 0, 0);
+        return;
     }
 
     /* Update facing FIRST — so inputs and attacks are processed with correct facing */
@@ -1073,6 +1087,13 @@ void game_update(GameState *game, GameRenderState *render) {
                         partner->state = STATE_ATTACK_STARTUP;
                         partner->state_frame = 0;
                         partner->vx = 0;
+                        /* DHC super flash */
+                        {
+                            int flash = (partner_super->meter_cost >= 3000) ? SUPER_FLASH_LVL3 : SUPER_FLASH_LVL1;
+                            game->super_flash_frames = flash;
+                            game->super_flash_player = i;
+                            if (render) render->super_flash_frames_max = flash;
+                        }
                         /* Old character exits */
                         c->state = STATE_IDLE;
                         c->vx = 0;
@@ -1110,6 +1131,22 @@ void game_update(GameState *game, GameRenderState *render) {
     fixed_t p1x = game->players[0].chars[game->players[0].active_char].x;
     player_update(&game->players[0], input_get_current(&game->inputs[0]), &game->inputs[0], p2x);
     player_update(&game->players[1], input_get_current(&game->inputs[1]), &game->inputs[1], p1x);
+
+    /* Trigger super flash when a super move begins startup */
+    for (int i = 0; i < 2; i++) {
+        PlayerState *pl = &game->players[i];
+        CharacterState *c = &pl->chars[pl->active_char];
+        if (c->state == STATE_ATTACK_STARTUP && c->state_frame == 0) {
+            const MoveData *move = current_attack_move(pl);
+            if (move && move->move_type == MOVE_TYPE_SUPER) {
+                int flash = (move->meter_cost >= 3000) ? SUPER_FLASH_LVL3 : SUPER_FLASH_LVL1;
+                game->super_flash_frames = flash;
+                game->super_flash_player = i;
+                if (render) render->super_flash_frames_max = flash;
+            }
+        }
+    }
+
     update_player_anim(&render->sprites[0], &game->players[0]);
     update_player_anim(&render->sprites[1], &game->players[1]);
     player_resolve_collisions(&game->players[0], &game->players[1]);
@@ -1231,7 +1268,7 @@ void game_update(GameState *game, GameRenderState *render) {
         /* Recover only when off-screen and not incoming */
         if (!pl->assist_on_screen && partner->state != STATE_INCOMING_FALL) {
             if (partner->blue_hp > 0 && partner->hp < partner->max_hp) {
-                int recover = 5;
+                int recover = BLUE_HEALTH_RECOVERY;
                 if (recover > partner->blue_hp) recover = partner->blue_hp;
                 if (partner->hp + recover > partner->max_hp)
                     recover = partner->max_hp - partner->hp;
@@ -1458,7 +1495,7 @@ void game_update(GameState *game, GameRenderState *render) {
                                                 (assist_move->properties & MOVE_PROP_WALL_BOUNCE) != 0);
                                 if (!blocking_hit) {
                                     pl->hit_confirmed = 1;
-                                    render->damage_drain_delay[opp_idx][opp->active_char] = 30;
+                                    render->damage_drain_delay[opp_idx][opp->active_char] = DAMAGE_DRAIN_DELAY;
                                 }
                                 pl->assist_opponent_hits[opp_idx] = pl->assist_hit_id;
                             }
@@ -1537,7 +1574,7 @@ void game_update(GameState *game, GameRenderState *render) {
                                                 (move->properties & MOVE_PROP_LAUNCHER) != 0,
                                                 (move->properties & MOVE_PROP_WALL_BOUNCE) != 0);
                             }
-                            render->damage_drain_delay[i][1 - pl->active_char] = 30;
+                            render->damage_drain_delay[i][1 - pl->active_char] = DAMAGE_DRAIN_DELAY;
                             opp->opponent_hits[opp_hit_idx] = opp->attack_hit_id;
                             /* Interrupt assist: skip to exiting */
                             assist->state = STATE_ASSIST_EXITING;
@@ -1577,7 +1614,7 @@ void game_update(GameState *game, GameRenderState *render) {
                                             (proj->properties & MOVE_PROP_LAUNCHER) != 0,
                                             (proj->properties & MOVE_PROP_WALL_BOUNCE) != 0);
                         }
-                        render->damage_drain_delay[i][1 - pl->active_char] = 30;
+                        render->damage_drain_delay[i][1 - pl->active_char] = DAMAGE_DRAIN_DELAY;
                         proj->active = FALSE;
 
                         /* Interrupt assist: skip to exiting */
@@ -1786,6 +1823,13 @@ void game_render(const GameState *game, const GameRenderState *render) {
     }
 
     EndMode2D();
+
+    /* Super flash darken overlay */
+    if (render->super_flash_frames_max > 0 && game->super_flash_frames > 0) {
+        float progress = (float)game->super_flash_frames / (float)render->super_flash_frames_max;
+        unsigned char alpha = (unsigned char)(SUPER_FLASH_DARKEN * progress);
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, alpha});
+    }
 
     /* --- Screen space HUD (outside camera) --- */
 

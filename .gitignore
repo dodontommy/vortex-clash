@@ -22,6 +22,13 @@ compile_commands.json
 # Raylib (fetched)
 lib/
 
+# Python
+__pycache__/
+*.pyc
+
+# Dump/debug images
+tools/row_dumps/
+
 # OS
 .DS_Store
 Thumbs.db

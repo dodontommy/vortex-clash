@@ -2,6 +2,7 @@
 #define COMBO_H
 
 #include "types.h"
+#include "feel.h"
 
 /* Combo state for tracking hits and scaling */
 typedef struct {
@@ -12,13 +13,12 @@ typedef struct {
     int otg_used;            /* OTG used this combo */
     int wall_bounce_used;    /* Wall bounce used this combo */
     int ground_bounce_used;  /* Ground bounce used this combo */
-    int hitstun_decay_level; /* Hitstun decay tier (0-3) */
+    int hitstun_decay_level; /* Hitstun decay tier (0-4) */
+    int juggle_count;        /* Air hits in current combo (for progressive juggle gravity) */
 } ComboState;
 
 /* Damage scaling table (indexed by hit count, 0-indexed) */
 extern const int DAMAGE_SCALING[];
-#define MIN_SCALING 72
-#define LIGHT_STARTER_MULT 80
 
 /* Combo functions */
 void combo_init(ComboState *combo);

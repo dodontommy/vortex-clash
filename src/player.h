@@ -95,6 +95,8 @@ typedef struct {
     fixed_t impact_pop_return;     /* Return-to-ground offset */
     /* Defensive rhythm: pushblock lockout to avoid spam. */
     int pushblock_lockout;         /* Frames until next pushblock can trigger */
+    /* Air combo tracking */
+    uint8_t air_normals_used;      /* Bitmask: air normals used since leaving ground */
 } CharacterState;
 
 /* Deterministic move reference stored in rollback state. */
@@ -167,5 +169,10 @@ void player_render(const PlayerState *p);
 void player_update_facing(PlayerState *p1, PlayerState *p2);
 void player_resolve_collisions(PlayerState *p1, PlayerState *p2);
 void advance_anim(CharacterState *c);
+
+/* Test-only: expose cancel check for headless tests */
+#ifdef TESTING_HEADLESS
+int can_cancel_into_test(const PlayerState *p, CancelLevel lvl, const struct MoveData *target);
+#endif
 
 #endif /* PLAYER_H */

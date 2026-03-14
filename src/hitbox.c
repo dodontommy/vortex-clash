@@ -1,38 +1,37 @@
 #include "hitbox.h"
 #include "character.h"
 #include "combo.h"
+#include "feel.h"
 #include "sprite.h"
 #include <string.h>
 
-#define HIT_FLASH_FRAMES 4
-
 static int impact_hitstop_for_move(const MoveData *move, int is_blocking, int counter_hit) {
-    int hs = 4;
+    int hs = HITSTOP_NORMAL_M;
 
     if (move->move_type == MOVE_TYPE_NORMAL) {
-        if (move->strength <= 0) hs = 3;
-        else if (move->strength == 1) hs = 4;
-        else hs = 5;
+        if (move->strength <= 0) hs = HITSTOP_NORMAL_L;
+        else if (move->strength == 1) hs = HITSTOP_NORMAL_M;
+        else hs = HITSTOP_NORMAL_H;
     } else if (move->move_type == MOVE_TYPE_SPECIAL) {
-        if (move->strength <= 0) hs = 4;
-        else if (move->strength == 1) hs = 5;
-        else hs = 6;
+        if (move->strength <= 0) hs = HITSTOP_SPECIAL_L;
+        else if (move->strength == 1) hs = HITSTOP_SPECIAL_M;
+        else hs = HITSTOP_SPECIAL_H;
     } else if (move->move_type == MOVE_TYPE_SUPER) {
-        hs = 7;
+        hs = HITSTOP_SUPER;
     } else if (move->move_type == MOVE_TYPE_THROW) {
-        hs = 7;
+        hs = HITSTOP_THROW;
     }
 
-    if (move->properties & MOVE_PROP_LAUNCHER) hs += 1;
-    if (move->properties & MOVE_PROP_WALL_BOUNCE) hs += 2;
-    if (counter_hit) hs += 1;
+    if (move->properties & MOVE_PROP_LAUNCHER) hs += HITSTOP_LAUNCHER_BONUS;
+    if (move->properties & MOVE_PROP_WALL_BOUNCE) hs += HITSTOP_WALLBOUNCE_BONUS;
+    if (counter_hit) hs += HITSTOP_COUNTER_BONUS;
 
     if (is_blocking) {
-        hs -= (hs >= 6) ? 2 : 1;
-        if (hs < 2) hs = 2;
+        hs -= (hs >= 8) ? HITSTOP_BLOCK_REDUCE_HI : HITSTOP_BLOCK_REDUCE_LO;
+        if (hs < HITSTOP_BLOCK_FLOOR) hs = HITSTOP_BLOCK_FLOOR;
     }
 
-    if (hs > 10) hs = 10;
+    if (hs > HITSTOP_CAP) hs = HITSTOP_CAP;
     return hs;
 }
 
@@ -139,7 +138,7 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         int is_light_hit = (move->move_type == MOVE_TYPE_NORMAL && move->strength == 0);
         int hitstun_bonus = 0; /* extra hitstun from counter hit */
         if (counter_hit) {
-            damage = (damage * 110) / 100;   /* 1.1x damage */
+            damage = (damage * CH_DAMAGE_MULT) / 100;   /* 1.3x damage */
             hitstun_bonus = 1; /* flag for later */
         }
         if (attacker_combo) {
@@ -148,9 +147,9 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
 
         defender->hp -= damage;
 
-        /* Blue health: 70% of damage becomes recoverable off-screen */
+        /* Blue health: portion of damage becomes recoverable off-screen */
         {
-            int blue = (damage * 70) / 100;
+            int blue = (damage * BLUE_HEALTH_PERCENT) / 100;
             defender->blue_hp += blue;
             /* Cap so hp + blue_hp <= max_hp */
             if (defender->hp + defender->blue_hp > defender->max_hp) {
@@ -179,11 +178,16 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         if (impact_scale < 70) impact_scale = 70;
 
         if (hitstun_bonus) {
-            hitstun = (hitstun * 120) / 100; /* 1.2x hitstun on counter hit */
+            hitstun = (hitstun * CH_HITSTUN_MULT) / 100; /* 1.3x hitstun on counter hit */
         }
         if (attacker_combo) {
             int decay = combo_get_hitstun_decay(attacker_combo);
+            if (!defender->on_ground) {
+                decay = 100 - (100 - decay) / 2;  /* Half penalty in air */
+            }
             hitstun = (hitstun * decay) / 100;
+            if (!defender->on_ground && hitstun < JUGGLE_HITSTUN_FLOOR)
+                hitstun = JUGGLE_HITSTUN_FLOOR;
             if (hitstun < 1) hitstun = 1;
         }
 
@@ -200,24 +204,28 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         defender->impact_pop_vy = 0;
         defender->impact_pop_return = 0;
 
-        /* Knockdown or hitstun based on move properties */
-        if (move->properties & (MOVE_PROP_HARD_KD | MOVE_PROP_SLIDING_KD)) {
-            defender->state = STATE_KNOCKDOWN;
-        } else {
-            defender->state = STATE_HITSTUN;
-        }
+        /* Default to hitstun; knockdown override applied after velocity block */
+        defender->state = STATE_HITSTUN;
         defender->state_frame = 0;
         /* Note: don't uncrouch — defender stays at current height/position.
          * Crouching flag preserved so hitstun exit returns to crouch. */
 
         /* Knockback and airborne handling */
         if (!defender->on_ground) {
-            /* Already airborne (juggle): slam them down into knockdown.
-             * Preserves horizontal knockback but forces downward velocity. */
+            /* Already airborne (juggle): use move's actual knockback_y
+             * plus progressive juggle gravity instead of hardcoded slam. */
             defender->vx = move->knockback_x * impact_scale / 100 * direction;
-            defender->vy = FIXED_FROM_INT(8);  /* Fast downward slam */
-            defender->state = STATE_HITSTUN;
-            /* They'll land into knockdown via update_hitstun's landing check */
+            int juggle_hits = attacker_combo ? attacker_combo->juggle_count : 0;
+            fixed_t juggle_pull = (fixed_t)juggle_hits * JUGGLE_GRAVITY_PER_HIT;
+            fixed_t base_vy = move->knockback_y;
+            /* Minimum upward bounce for non-KD air hits to sustain combos.
+             * Without this, weak knockback_y (-2, -3) gets eaten by gravity
+             * in 4-6 frames and the opponent plummets immediately. */
+            if (!(move->properties & (MOVE_PROP_HARD_KD | MOVE_PROP_SLIDING_KD))) {
+                if (base_vy > JUGGLE_MIN_VY) base_vy = JUGGLE_MIN_VY;
+            }
+            defender->vy = base_vy + juggle_pull;
+            if (attacker_combo) attacker_combo->juggle_count++;
         } else if (move->properties & MOVE_PROP_LAUNCHER) {
             /* Launcher: send opponent airborne */
             defender->vx = move->knockback_x * impact_scale / 100 * direction;
@@ -236,9 +244,9 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
             defender->vy = move->knockback_y;
             /* Visual weight: brief lift on grounded impacts before pushback slide. */
             if (defender->on_ground) {
-                int pop_px = 1;
-                if (move->strength == 1) pop_px = 2;
-                if (move->strength >= 2 || move->move_type >= MOVE_TYPE_SPECIAL) pop_px = 3;
+                int pop_px = IMPACT_POP_L;
+                if (move->strength == 1) pop_px = IMPACT_POP_M;
+                if (move->strength >= 2 || move->move_type >= MOVE_TYPE_SPECIAL) pop_px = IMPACT_POP_H;
                 defender->impact_pop_frames = 1;
                 defender->impact_pop_vy = FIXED_FROM_INT(-pop_px);
                 defender->impact_pop_return = FIXED_FROM_INT(pop_px);
@@ -262,6 +270,10 @@ void hitbox_resolve_hit(CharacterState *attacker, CharacterState *defender,
         if (move->properties & MOVE_PROP_GROUND_BOUNCE) {
             /* Mark defender for ground bounce on landing */
             defender->ground_bounce_pending = TRUE;
+        }
+        /* After all velocity/state assignment: knockdown override wins */
+        if (move->properties & (MOVE_PROP_HARD_KD | MOVE_PROP_SLIDING_KD)) {
+            defender->state = STATE_KNOCKDOWN;
         }
     }
 
